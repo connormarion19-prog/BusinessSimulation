@@ -7,6 +7,8 @@ import { advanceWeek as advanceWeekEngine } from "../engine/clock";
 import { getIndustryDefinition } from "../industries/registry";
 import { generateApplicantPool, answerInterviewQuestion as answerInterviewQuestionEngine, generateReferenceCheckNote, INTERVIEW_QUESTION_BANK } from "../engine/hiring";
 import { makeEntry, dr, cr } from "../engine/ledger";
+import { addProductToCompany, discontinueProductOnCompany } from "../engine/products";
+import { addSupplierToCompany, removeSupplierFromCompany } from "../engine/suppliers";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
 function clone<T>(value: T): T {
@@ -24,6 +26,12 @@ interface GameStoreState {
   exitToMenu: () => void;
   advanceWeek: () => void;
   setProductPrice: (productId: string, price: number) => void;
+  addProduct: (productTemplateId: string) => void;
+  setProductCapacityAllocation: (productId: string, pct: number) => void;
+  discontinueProduct: (productId: string) => void;
+  addSupplier: (supplierTemplateId: string) => void;
+  setSupplierAllocation: (supplierId: string, pct: number) => void;
+  removeSupplier: (supplierId: string) => void;
   setFounderAllocation: (allocation: { production: number; purchasing: number; sales: number; accounting: number }) => void;
   postJobOpening: (roleId: string, salaryMin: number, salaryMax: number) => void;
   askInterviewQuestion: (openingId: string, candidateId: string, questionId: string) => void;
@@ -79,6 +87,60 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const next = clone(game);
     const product = next.company.products.find((p) => p.id === productId);
     if (product) product.priceWeekly = Math.max(0.01, price);
+    set({ game: next });
+  },
+
+  addProduct: (productTemplateId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const industry = getIndustryDefinition(next.company.industryId);
+    if (!industry) return;
+    if (!addProductToCompany(next.company, industry, productTemplateId, next.week, next.currentDate, next.rng)) return;
+    set({ game: next });
+  },
+
+  setProductCapacityAllocation: (productId, pct) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const product = next.company.products.find((p) => p.id === productId);
+    if (product) product.capacityAllocationPct = Math.max(0, Math.min(1, pct));
+    set({ game: next });
+  },
+
+  discontinueProduct: (productId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    if (!discontinueProductOnCompany(next.company, productId, next.week, next.currentDate)) return;
+    set({ game: next });
+  },
+
+  addSupplier: (supplierTemplateId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const industry = getIndustryDefinition(next.company.industryId);
+    if (!industry) return;
+    if (!addSupplierToCompany(next.company, industry, supplierTemplateId, next.week, next.currentDate)) return;
+    set({ game: next });
+  },
+
+  setSupplierAllocation: (supplierId, pct) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const supplier = next.company.suppliers.find((s) => s.id === supplierId);
+    if (supplier) supplier.purchaseAllocationPct = Math.max(0, Math.min(1, pct));
+    set({ game: next });
+  },
+
+  removeSupplier: (supplierId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    if (!removeSupplierFromCompany(next.company, supplierId, next.week, next.currentDate)) return;
     set({ game: next });
   },
 

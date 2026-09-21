@@ -1,66 +1,29 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useGameStore } from "../store/useGameStore";
-import { productAvgUnitCost, productCostBreakdownPct, isDepartmentDelegated } from "../engine/company";
+import { isDepartmentDelegated } from "../engine/company";
 import { formatMoney } from "../engine/dateUtils";
 import { Card, CardHeading, ProgressBar, Badge } from "../components/ui";
 
 export default function Operations() {
   const game = useGameStore((s) => s.game)!;
-  const setProductPrice = useGameStore((s) => s.setProductPrice);
   const setFounderAllocation = useGameStore((s) => s.setFounderAllocation);
   const { company, market } = game;
-  const product = company.products.find((p) => p.active) ?? company.products[0];
   const facility = company.facilities[0];
+  const activeProducts = company.products.filter((p) => p.active);
 
   const [alloc, setAlloc] = useState(company.founderAllocation);
   const allocTotal = alloc.production + alloc.purchasing + alloc.sales + alloc.accounting;
 
-  const avgCost = productAvgUnitCost(product);
-  const breakdown = productCostBreakdownPct(product);
-  const margin = product.priceWeekly > 0 ? ((product.priceWeekly - avgCost) / product.priceWeekly) * 100 : 0;
+  const totalCapacityAllocated = activeProducts.reduce((s, p) => s + p.capacityAllocationPct, 0);
+  const machineCapacity = facility.baseWeeklyCapacityUnits * (facility.condition / 100);
+  const totalProducedLastWeek = company.products.reduce((s, p) => s + p.unitsProducedLastWeek, 0);
 
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-bold">Operations</h1>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeading subtitle="Set the price customers see. The market and your own customers respond next week.">Pricing — {product.name}</CardHeading>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl font-bold">${product.priceWeekly.toFixed(2)}</span>
-            <span className="text-xs text-ink-400">per {product.unitLabel}</span>
-          </div>
-          <input
-            type="range"
-            min={avgCost * 0.8}
-            max={avgCost * 2.2 || 100}
-            step={0.25}
-            value={product.priceWeekly}
-            onChange={(e) => setProductPrice(product.id, Number(e.target.value))}
-            className="mt-2 w-full"
-          />
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-ink-300">
-            {product.inventoryUnits > 0 ? (
-              <>
-                <div>Avg. unit cost (weighted avg. inventory): <span className="font-semibold">${avgCost.toFixed(2)}</span></div>
-                <div>Implied margin: <span className={`font-semibold ${margin >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{margin.toFixed(1)}%</span></div>
-                <div>Materials share: {(breakdown.materials * 100).toFixed(0)}%</div>
-                <div>Labor share: {(breakdown.labor * 100).toFixed(0)}%</div>
-                <div>Overhead share: {(breakdown.overhead * 100).toFixed(0)}%</div>
-              </>
-            ) : (
-              <div className="col-span-2 text-ink-500">No finished-goods inventory on hand right now — everything produced last week sold the same week, so there's no cost basis to show until the next production run.</div>
-            )}
-            <div>Market avg. price: ${market.avgMarketPrice.toFixed(2)}</div>
-            <div>Est. regional demand: {Math.round(market.estimatedDemandRangeUnits[0]).toLocaleString()}–{Math.round(market.estimatedDemandRangeUnits[1]).toLocaleString()} {market.unitLabel}s/wk</div>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink-400">
-            <div>Inventory on hand: <span className="text-ink-100">{Math.round(product.inventoryUnits)}</span></div>
-            <div>Sold last week: <span className="text-ink-100">{Math.round(product.unitsSoldLastWeek)}</span></div>
-            <div>Unmet demand: <span className="text-ink-100">{Math.round(product.unitsUnfulfilledLastWeek)}</span></div>
-          </div>
-        </Card>
-
         <Card>
           <CardHeading subtitle="Facility & equipment status">{facility.name}</CardHeading>
           <div className="flex flex-col gap-3 text-sm">
@@ -72,12 +35,30 @@ export default function Operations() {
               <ProgressBar value={facility.condition} tone={facility.condition < 40 ? "bad" : facility.condition < 70 ? "warn" : "good"} />
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-ink-300">
-              <div>Machine capacity: {facility.baseWeeklyCapacityUnits.toLocaleString()} units/wk</div>
-              <div>Produced last week: {Math.round(product.unitsProducedLastWeek).toLocaleString()}</div>
+              <div>Machine capacity: {Math.round(machineCapacity).toLocaleString()} units/wk</div>
+              <div>Produced last week (all products): {Math.round(totalProducedLastWeek).toLocaleString()}</div>
               <div>Weekly lease: {formatMoney(facility.weeklyLeaseCost)}</div>
               <div>Weekly utilities (base): {formatMoney(facility.weeklyUtilityBaseCost)}</div>
               <div>Raw material on hand: {Math.round(company.rawMaterialInventoryUnits)} {market.inputLabel}s</div>
-              <div>Input price: ${market.inputPricePerUnit.toFixed(2)}/{market.inputLabel}</div>
+              <div>Input price (purchase-weighted avg): ${market.inputPricePerUnit.toFixed(2)}/{market.inputLabel}</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeading subtitle={<>Capacity is split across active product lines — manage this in <Link className="text-emerald-400 underline" to="/game/products">Products</Link>.</>}>
+            Capacity Allocation
+          </CardHeading>
+          <div className="flex flex-col gap-2">
+            {activeProducts.map((p) => (
+              <div key={p.id} className="flex items-center justify-between text-sm">
+                <span>{p.name}</span>
+                <span className="tabular-nums text-ink-300">{Math.round(p.capacityAllocationPct * 100)}%</span>
+              </div>
+            ))}
+            <div className="mt-1 border-t border-ink-700 pt-2 text-xs text-ink-400">
+              Total allocated: {Math.round(totalCapacityAllocated * 100)}%
+              {totalCapacityAllocated < 0.98 && ` — ${Math.round((1 - totalCapacityAllocated) * 100)}% of capacity sits idle`}
             </div>
           </div>
         </Card>

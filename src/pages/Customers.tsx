@@ -4,6 +4,7 @@ import { Badge, Card, CardHeading, ProgressBar, Table, Td, Th } from "../compone
 export default function Customers() {
   const game = useGameStore((s) => s.game)!;
   const customers = game.company.customers;
+  const productNameById = Object.fromEntries(game.company.products.map((p) => [p.id, p.name]));
 
   return (
     <div className="flex flex-col gap-6">
@@ -13,13 +14,14 @@ export default function Customers() {
         <Table>
           <thead>
             <tr>
-              <Th>Name</Th><Th>Segment</Th><Th align="right">Annual Volume</Th><Th align="right">Relationship</Th><Th align="right">Terms</Th><Th align="right">Last Order</Th><Th>Status</Th>
+              <Th>Name</Th><Th>Product</Th><Th>Segment</Th><Th align="right">Annual Volume</Th><Th align="right">Relationship</Th><Th align="right">Terms</Th><Th align="right">Last Order</Th><Th>Status</Th>
             </tr>
           </thead>
           <tbody>
             {customers.map((c) => (
               <tr key={c.id}>
                 <Td>{c.name}</Td>
+                <Td className="text-ink-400">{productNameById[c.productId] ?? "—"}</Td>
                 <Td className="text-ink-400">{c.segment.replace(/-/g, " ")}</Td>
                 <Td align="right">{c.annualVolumeUnits.toLocaleString()}</Td>
                 <Td align="right" className="w-28"><ProgressBar value={c.relationshipStrength} tone={c.relationshipStrength > 60 ? "good" : c.relationshipStrength > 35 ? "warn" : "bad"} /></Td>

@@ -5,6 +5,7 @@ import NewGame from "./pages/NewGame";
 import Dashboard from "./pages/Dashboard";
 import Finance from "./pages/Finance";
 import Operations from "./pages/Operations";
+import Products from "./pages/Products";
 import Employees from "./pages/Employees";
 import Hiring from "./pages/Hiring";
 import Customers from "./pages/Customers";
@@ -26,6 +27,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="finance" element={<Finance />} />
           <Route path="operations" element={<Operations />} />
+          <Route path="products" element={<Products />} />
           <Route path="employees" element={<Employees />} />
           <Route path="hiring" element={<Hiring />} />
           <Route path="customers" element={<Customers />} />

@@ -33,7 +33,11 @@ export interface ProductLine {
   sku: string;
   unitLabel: string;
   priceWeekly: number; // current player-set price per unit
+  /** This product's own estimated fair market price, used as the relative-price baseline for demand. The founding product's tracks the shared competitor-driven market index; others drift independently. */
+  referenceMarketPrice: number;
   inputUnitsPerProductUnit: number; // raw-material units consumed per unit produced
+  /** Share (0-1) of the facility's total machine+labor capacity devoted to this product this week. Sum across active products should stay <= 1. */
+  capacityAllocationPct: number;
   inventoryUnits: number;
   /** Weighted-average finished-goods cost pools, split by cost type for COGS drill-down at sale. */
   fgValueMaterials: number;
@@ -42,12 +46,16 @@ export interface ProductLine {
   unitsProducedLastWeek: number;
   unitsSoldLastWeek: number;
   unitsUnfulfilledLastWeek: number;
+  /** false = discontinued: no longer produced, but remaining inventory can still be sold off. */
   active: boolean;
+  discontinuedWeek?: number;
 }
 
 export interface CustomerAccount {
   id: string;
   name: string;
+  /** The product line this account buys. */
+  productId: string;
   segment: string;
   location: string;
   annualVolumeUnits: number; // typical annual order volume at full satisfaction
@@ -70,6 +78,9 @@ export interface SupplierRelationship {
   reliability: number; // 0-1, affects delivery delay/shortfall risk
   paymentTermsDays: number;
   leadTimeWeeks: number;
+  /** Share (0-1) of raw-material purchases sourced from this supplier. Sum across suppliers should stay at 1. */
+  purchaseAllocationPct: number;
+  /** Derived/display convenience: the supplier with the largest allocation. Not used in purchasing logic. */
   isPrimary: boolean;
 }
 

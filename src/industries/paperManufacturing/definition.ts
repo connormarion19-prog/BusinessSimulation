@@ -1,7 +1,7 @@
 import type { IndustryDefinition, MarketState, NewCompanyParams } from "../../types/industry";
 import type { Company } from "../../types/core";
 import type { RngState } from "../../engine/rng";
-import { seedJournalEntryCounter } from "../../engine/ledger";
+import { seedJournalEntryCounter, round2 } from "../../engine/ledger";
 import { buildFoundingEntries } from "../../engine/financing";
 import { nextInt, nextRange, pick } from "../../engine/rng";
 import { PAPER_ROLES } from "./roles";
@@ -22,6 +22,9 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
 
   const { entries: foundingEntries, loan, ownership } = buildFoundingEntries(params);
   seedJournalEntryCounter(foundingEntries);
+
+  const founderPriceNoise = nextRange(rng, 0.95, 1.05);
+  const foundingReferencePrice = round2(productTemplate.suggestedUnitPrice * founderPriceNoise);
 
   const company: Company = {
     id: `co-${Date.now()}`,
@@ -56,7 +59,9 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
         sku: `${productTemplate.id.toUpperCase().slice(0, 4)}-${nextInt(rng, 1000, 9999)}`,
         unitLabel: productTemplate.unitLabel,
         priceWeekly: productTemplate.suggestedUnitPrice,
+        referenceMarketPrice: foundingReferencePrice,
         inputUnitsPerProductUnit: productTemplate.inputUnitsPerProductUnit,
+        capacityAllocationPct: 1,
         inventoryUnits: 0,
         fgValueMaterials: 0,
         fgValueLabor: 0,
@@ -73,6 +78,7 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
     customers: [0, 1].map((i) => ({
       id: `starter-customer-${i}`,
       name: STARTER_CUSTOMER_NAMES[i] ?? `${pick(rng, STARTER_CUSTOMER_NAMES)} #${i}`,
+      productId: "product-1",
       segment: segment.id,
       location: "Regional",
       annualVolumeUnits: Math.round(nextRange(rng, segment.typicalAnnualVolumeUnits[0], segment.typicalAnnualVolumeUnits[0] * 1.6)),
@@ -95,6 +101,7 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
         reliability: defaultSupplier.reliability,
         paymentTermsDays: defaultSupplier.paymentTermsDays,
         leadTimeWeeks: defaultSupplier.leadTimeWeeks,
+        purchaseAllocationPct: 1,
         isPrimary: true,
       },
     ],
@@ -116,7 +123,7 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
   const market: MarketState = {
     regionalWeeklyDemandUnits: facilityTemplate.baseWeeklyCapacityUnits * nextRange(rng, 6, 11),
     estimatedDemandRangeUnits: [0, 0],
-    avgMarketPrice: productTemplate.suggestedUnitPrice * nextRange(rng, 0.95, 1.05),
+    avgMarketPrice: foundingReferencePrice,
     inputPricePerUnit: defaultSupplier.pricePerUnit,
     inputPriceTrendPct: 0,
     priceElasticity: 1.4,

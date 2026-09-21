@@ -62,44 +62,74 @@ Everything runs client-side; saves persist to `localStorage` under multiple name
   interface every industry implements (products, roles, facilities, suppliers,
   customer segments, event pool, `createInitialState`, `simulateWeek`).
   **`paperManufacturing/`** is the deep reference implementation: pulp purchasing
-  with supplier reliability risk, machine + labor capacity constraints, defect/scrap
-  loss, weighted-average finished-goods costing split into materials/labor/overhead
-  (so COGS drill-down is real, not decorative), price-elastic spot demand blended
-  with relationship-driven contracted customer accounts, and six events (supplier
-  disruption, equipment breakdown, pulp price spikes, a large new account, a quality
-  complaint wave, a purchasing win) whose odds and severity depend on staffing and
-  diversification choices already made.
+  split across multiple suppliers by player-set allocation (each negotiating,
+  delivering, and drifting price independently), machine + labor capacity shared
+  across multiple concurrent product lines (each with its own price, capacity
+  allocation, reference market price, and customer segment), defect/scrap loss,
+  weighted-average finished-goods costing split into materials/labor/overhead per
+  product (so COGS drill-down is real, not decorative), price-elastic spot demand
+  blended with relationship-driven contracted customer accounts tied to a specific
+  product, and events (supplier disruption, equipment breakdown, pulp price spikes,
+  a large new account, a quality complaint wave, a purchasing win) whose odds and
+  severity depend on staffing and diversification choices already made — a supplier
+  disruption now hits in proportion to how much purchasing volume that specific
+  supplier actually carries, not a flat "diversified or not" toggle.
 - **`src/data`** — chart of accounts, the 15-industry roster (only Paper
   Manufacturing implemented; the rest are visible as "coming soon" so the intended
   scope is honest from day one), locations, financing sources, name pools.
 - **`src/store`** — a Zustand store holding `GameState` and every mutating action
   (advance week, set price, set founder time allocation, post an opening, interview,
-  hire, fire, raise); `saveSlots.ts` handles multi-slot localStorage persistence.
-- **`src/pages`** — Overview, Finance, Operations, Employees, Hiring, Customers,
-  Suppliers, Competitors, Market, Reports, Company/Ownership, Debug, Settings.
+  hire, fire, raise, launch/discontinue a product, add/drop/reallocate a supplier);
+  most of the non-trivial mutation logic lives in testable `src/engine` functions
+  (`products.ts`, `suppliers.ts`) that the store just calls. `saveSlots.ts` handles
+  multi-slot localStorage persistence.
+- **`src/pages`** — Overview, Finance, Operations, **Products**, Employees, Hiring,
+  Customers, **Suppliers** (now with real add/drop/reallocate actions), Competitors,
+  Market, Reports, Company/Ownership, Debug, Settings.
 
-## What's implemented (Phase 1 + Paper Manufacturing)
+## What's implemented
 
-The full loop from the design brief's "first playable version": choose difficulty,
-choose an industry (14 of 15 show as not-yet-implemented, honestly), name the
-company, pick a location, a financing source (with real terms shown before you
-commit — loan payment estimate or equity dilution, not just a number), a target
-customer segment, a starting product, and a facility; found the company; set price
-and your own time allocation across production/purchasing/sales/accounting; advance
-weeks and watch purchasing, production, sales, payroll, loan amortization, and tax
-accrual all run for real; post a job opening, review resumes, ask interview
-questions, run a reference check, hire; get a written weekly performance evaluation
-built from that employee's actual output; watch competitors react and the economy
-cycle; read a full company history log and long-run KPI charts; inspect the trial
-balance and the causal breakdown behind any revenue/profit swing.
+**Phase 1 foundation + Paper Manufacturing reference industry.** The full loop from
+the design brief's "first playable version": choose difficulty, choose an industry
+(14 of 15 show as not-yet-implemented, honestly), name the company, pick a location,
+a financing source (with real terms shown before you commit), a target customer
+segment, a starting product, and a facility; found the company; set price and your
+own time allocation across production/purchasing/sales/accounting; advance weeks and
+watch purchasing, production, sales, payroll, loan amortization, and tax accrual all
+run for real; hire through a real resume/interview/reference-check/offer flow; get a
+written weekly performance evaluation built from that employee's actual output;
+watch competitors react and the economy cycle; read a full company history log and
+long-run KPI charts; inspect the trial balance and the causal breakdown behind any
+revenue/profit swing.
 
-**Explicitly out of scope for this pass** (per the brief's own phasing): the other 14
-industries, international expansion, acquisitions/M&A, a management hierarchy above
-"founder → individual contributor" (no manager-of-managers yet), multi-facility /
-multi-product operations, supplier switching/diversification UI (the event system
-already reacts to diversification, but there's no UI action to add a second supplier
-yet), and deeper competitor AI (they react to the market, not yet to specific player
-moves). These are the natural next phases on top of a validated core engine.
+**Multi-product operations (Products tab).** Launch additional product lines from
+the industry's catalog (e.g. add Kraft Packaging Paper or Specialty Stock alongside
+Standard Copy Paper). Each product line has its own price, its own share of the
+facility's shared machine + labor capacity (player-adjustable, always rebalanced to
+sum to the facility's real capacity), its own finished-goods cost pools and COGS
+drill-down, its own reference market price, and its own contracted customer accounts.
+Discontinuing a line frees its capacity for the others and stops new production, but
+lets remaining inventory sell down rather than vanishing. Diversifying is a genuine
+tradeoff — more lines mean more addressable demand, but every line competes for the
+same finite capacity and raw-material buffer.
+
+**Supplier diversification (Suppliers tab).** Add a second or third supplier from
+the industry's roster and split purchasing across them with sliders (always
+rebalanced to sum to 100%). Each supplier has its own price, quality, reliability,
+and payment terms, and each negotiates and delivers independently every week — a
+reliability failure on one supplier no longer wipes out the whole week's raw-material
+delivery if you're sourcing from others too. The event engine reads this directly: a
+supplier-disruption event is weighted toward whichever supplier carries the most
+volume, and its severity scales with that supplier's actual share of purchasing, so
+real diversification (spreading allocation, not just adding a name to a list) is
+what limits the damage.
+
+**Explicitly out of scope for this pass**: the other 14 industries, international
+expansion, acquisitions/M&A, a management hierarchy above "founder → individual
+contributor" (no manager-of-managers, no delegated authority levels yet),
+multi-facility operations, geographic expansion, and deeper competitor AI (they
+react to the market, not yet to specific player moves like a new product launch).
+These are the natural next phases on top of a validated, tested core engine.
 
 ## Testing
 
@@ -107,7 +137,11 @@ moves). These are the natural next phases on top of a validated core engine.
 double-entry posting/rejection of unbalanced entries, trial-balance integrity across
 mixed transactions, loan amortization to a zero balance, weekly evaluations
 generating from real hired-employee data, a JSON save/load round trip that keeps
-simulating correctly afterward, and — the most load-bearing test — a **260-week (5
-calendar year) simulated run that asserts the accounting identity holds every single
-week**, matching the design rule that an unbalanced ledger is a bug, never a
-tolerated state.
+simulating correctly afterward, a **260-week (5 calendar year) simulated run** that
+asserts the accounting identity holds every single week, and a dedicated suite for
+multi-product/multi-supplier operations: capacity/purchasing allocation always
+rebalances to 1 when a line or supplier is added or removed, discontinuing a product
+stops new production while still selling off remaining inventory, and running two
+product lines against three suppliers simultaneously for 20-30 simulated weeks stays
+balanced throughout — matching the design rule that an unbalanced ledger is a bug,
+never a tolerated state.

@@ -5,7 +5,7 @@ export function Card({ children, className }: { children: ReactNode; className?:
   return <div className={clsx("rounded-lg border border-ink-700 bg-ink-900 p-4", className)}>{children}</div>;
 }
 
-export function CardHeading({ children, subtitle }: { children: ReactNode; subtitle?: string }) {
+export function CardHeading({ children, subtitle }: { children: ReactNode; subtitle?: ReactNode }) {
   return (
     <div className="mb-3">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-300">{children}</h3>
@@ -85,7 +85,7 @@ export function Table({ children }: { children: ReactNode }) {
   );
 }
 
-export function Th({ children, align = "left" }: { children: ReactNode; align?: "left" | "right" }) {
+export function Th({ children, align = "left" }: { children?: ReactNode; align?: "left" | "right" }) {
   return <th className={clsx("border-b border-ink-700 py-1.5 text-xs font-medium uppercase tracking-wide text-ink-400", align === "right" ? "text-right" : "text-left")}>{children}</th>;
 }
 

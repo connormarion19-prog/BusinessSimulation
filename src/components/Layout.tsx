@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: "/game", label: "Overview", end: true },
   { to: "/game/finance", label: "Finance" },
   { to: "/game/operations", label: "Operations" },
+  { to: "/game/products", label: "Products" },
   { to: "/game/employees", label: "Employees" },
   { to: "/game/hiring", label: "Hiring" },
   { to: "/game/customers", label: "Customers" },

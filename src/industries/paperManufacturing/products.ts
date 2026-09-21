@@ -14,6 +14,7 @@ export const PAPER_PRODUCTS: ProductTemplate[] = [
     baseUnitVariableCost: 14.5,
     suggestedUnitPrice: 19.25,
     inputUnitsPerProductUnit: 0.082,
+    categoryDemandShare: 0.55,
   },
   {
     id: "packaging-paper",
@@ -23,6 +24,7 @@ export const PAPER_PRODUCTS: ProductTemplate[] = [
     baseUnitVariableCost: 21.75,
     suggestedUnitPrice: 28.5,
     inputUnitsPerProductUnit: 0.121,
+    categoryDemandShare: 0.30,
   },
   {
     id: "specialty-paper",
@@ -32,6 +34,7 @@ export const PAPER_PRODUCTS: ProductTemplate[] = [
     baseUnitVariableCost: 34.0,
     suggestedUnitPrice: 51.0,
     inputUnitsPerProductUnit: 0.095,
+    categoryDemandShare: 0.15,
   },
 ];
 

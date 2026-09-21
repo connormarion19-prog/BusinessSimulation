@@ -32,6 +32,8 @@ export interface ProductTemplate {
   baseUnitVariableCost: number;
   suggestedUnitPrice: number;
   inputUnitsPerProductUnit: number; // raw material consumption per unit produced
+  /** This product's share (0-1) of total regional demand within its industry's demand pool. */
+  categoryDemandShare: number;
 }
 
 export interface FacilityTemplate {

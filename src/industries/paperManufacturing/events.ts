@@ -1,7 +1,11 @@
 import type { IndustryEventDefinition } from "../../types/industry";
-import { chance, nextInt, nextRange } from "../../engine/rng";
+import { chance, nextInt, nextRange, weightedPick } from "../../engine/rng";
 import { makeEntry, dr, cr, round2 } from "../../engine/ledger";
 import { PAPER_CUSTOMER_SEGMENTS } from "./customers";
+
+export function supplierShortfallFlagKey(supplierId: string): string {
+  return `shortfall:${supplierId}`;
+}
 
 let eventCustomerCounter = 0;
 
@@ -13,28 +17,32 @@ let eventCustomerCounter = 0;
 export const PAPER_EVENTS: IndustryEventDefinition[] = [
   {
     id: "major-supplier-disruption",
-    title: "Primary Pulp Supplier Disruption",
+    title: "Pulp Supplier Disruption",
     category: "supply-chain",
     severity: "negative",
     baseWeeklyProbability: 0.02,
     eligible: (ctx) => ctx.company.suppliers.length > 0,
     apply: (ctx) => {
-      const diversified = ctx.company.suppliers.filter((s) => s.isPrimary === false).length > 0;
-      const severityUnits = diversified
-        ? Math.round(nextRange(ctx.rng, 15, 40))
-        : Math.round(nextRange(ctx.rng, 60, 140));
-      const primary = ctx.company.suppliers.find((s) => s.isPrimary) ?? ctx.company.suppliers[0];
+      // The disrupted supplier is picked weighted by how much of your purchasing depends on them —
+      // diversifying spend across suppliers, not just adding a second one, is what actually limits the damage.
+      const disrupted = weightedPick(
+        ctx.rng,
+        ctx.company.suppliers.map((s) => [s, Math.max(0.01, s.purchaseAllocationPct)] as const),
+      );
+      const diversified = ctx.company.suppliers.length > 1;
+      const outageBaseTons = diversified ? nextRange(ctx.rng, 40, 110) : nextRange(ctx.rng, 60, 140);
+      const severityUnits = Math.round(outageBaseTons * disrupted.purchaseAllocationPct);
       const narrative = diversified
-        ? `${primary?.name ?? "Your primary supplier"} had a plant outage this week. Because you also buy from a backup supplier, the shortfall was limited to roughly ${severityUnits} pulp-tons of delayed material.`
-        : `${primary?.name ?? "Your primary supplier"} had a plant outage this week and couldn't fill the order at all. With no backup supplier on the books, roughly ${severityUnits} pulp-tons of expected material simply didn't arrive.`;
-      ctx.eventFlags.pulpShortfallUnits = (ctx.eventFlags.pulpShortfallUnits ?? 0) + severityUnits;
+        ? `${disrupted.name} had a plant outage this week — they supply about ${Math.round(disrupted.purchaseAllocationPct * 100)}% of your pulp, so roughly ${severityUnits} pulp-tons of expected material didn't arrive; your other supplier(s) kept the rest flowing.`
+        : `${disrupted.name} had a plant outage this week and couldn't fill the order at all. With no backup supplier on the books, roughly ${severityUnits} pulp-tons of expected material simply didn't arrive.`;
+      ctx.eventFlags[supplierShortfallFlagKey(disrupted.id)] = (ctx.eventFlags[supplierShortfallFlagKey(disrupted.id)] ?? 0) + severityUnits;
       return {
         entries: [],
         narrative,
         historyEvent: {
           week: ctx.week,
           date: ctx.date,
-          headline: "Supplier disruption hit raw material supply",
+          headline: `Supplier disruption: ${disrupted.name}`,
           detail: narrative,
           category: "event",
         },
@@ -88,8 +96,11 @@ export const PAPER_EVENTS: IndustryEventDefinition[] = [
     eligible: () => true,
     apply: (ctx) => {
       const pctIncrease = round2(nextRange(ctx.rng, 14, 32));
+      for (const supplier of ctx.company.suppliers) {
+        supplier.pricePerUnit = round2(supplier.pricePerUnit * (1 + pctIncrease / 100));
+      }
       ctx.market.inputPricePerUnit = round2(ctx.market.inputPricePerUnit * (1 + pctIncrease / 100));
-      const narrative = `Pulp markets moved sharply this week — industry-wide input costs jumped about ${pctIncrease}%, pushing your delivered pulp price to $${ctx.market.inputPricePerUnit.toFixed(2)}/ton.`;
+      const narrative = `Pulp markets moved sharply this week — industry-wide input costs jumped about ${pctIncrease}% across every supplier, pushing your average delivered pulp price to roughly $${ctx.market.inputPricePerUnit.toFixed(2)}/ton.`;
       return {
         entries: [],
         narrative,
@@ -115,9 +126,12 @@ export const PAPER_EVENTS: IndustryEventDefinition[] = [
       eventCustomerCounter += 1;
       const annualVolume = Math.round(nextRange(ctx.rng, segment.typicalAnnualVolumeUnits[0], segment.typicalAnnualVolumeUnits[1]) * 1.3);
       const name = `${["Heartland", "Union", "Lakeshore", "Crestview", "Summit"][nextInt(ctx.rng, 0, 4)]} ${["Distribution", "Supply Partners", "Wholesale", "Converters"][nextInt(ctx.rng, 0, 3)]}`;
+      const activeProducts = ctx.company.products.filter((p) => p.active);
+      const targetProduct = activeProducts.length > 0 ? activeProducts[nextInt(ctx.rng, 0, activeProducts.length - 1)] : ctx.company.products[0];
       ctx.company.customers.push({
         id: `cust-event-${eventCustomerCounter}`,
         name,
+        productId: targetProduct.id,
         segment: segment.id,
         location: "Regional",
         annualVolumeUnits: annualVolume,
@@ -129,7 +143,7 @@ export const PAPER_EVENTS: IndustryEventDefinition[] = [
         lastOrderWeek: null,
         atRisk: false,
       });
-      const narrative = `${name}, a ${segment.name.toLowerCase()}, reached out looking for a new supplier and signed on — roughly ${annualVolume.toLocaleString()} units/year of potential volume if you can consistently deliver.`;
+      const narrative = `${name}, a ${segment.name.toLowerCase()}, reached out looking for a new supplier of ${targetProduct.name.toLowerCase()} and signed on — roughly ${annualVolume.toLocaleString()} units/year of potential volume if you can consistently deliver.`;
       return {
         entries: [],
         narrative,
@@ -185,16 +199,20 @@ export const PAPER_EVENTS: IndustryEventDefinition[] = [
     baseWeeklyProbability: 0.02,
     eligible: (ctx) => ctx.company.employees.some((e) => e.roleId === "purchasing-agent" && e.status === "active") || ctx.company.founderAllocation.purchasing > 0.25,
     apply: (ctx) => {
+      const target = weightedPick(
+        ctx.rng,
+        ctx.company.suppliers.map((s) => [s, Math.max(0.01, s.purchaseAllocationPct)] as const),
+      );
       const discountPct = round2(nextRange(ctx.rng, 4, 11));
-      ctx.market.inputPricePerUnit = round2(ctx.market.inputPricePerUnit * (1 - discountPct / 100));
-      const narrative = `A well-timed negotiation locked in a temporary pulp discount — about ${discountPct}% off the going rate, now $${ctx.market.inputPricePerUnit.toFixed(2)}/ton.`;
+      target.pricePerUnit = round2(target.pricePerUnit * (1 - discountPct / 100));
+      const narrative = `A well-timed renegotiation with ${target.name} locked in better terms — about ${discountPct}% off their price, now $${target.pricePerUnit.toFixed(2)}/ton.`;
       return {
         entries: [],
         narrative,
         historyEvent: {
           week: ctx.week,
           date: ctx.date,
-          headline: "Favorable pulp pricing negotiated",
+          headline: `Favorable pricing renegotiated with ${target.name}`,
           detail: narrative,
           category: "finance",
         },
