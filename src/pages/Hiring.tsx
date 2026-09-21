@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useGameStore } from "../store/useGameStore";
 import { getIndustryDefinition } from "../industries/registry";
 import { INTERVIEW_QUESTION_BANK } from "../engine/hiring";
 import { formatMoney } from "../engine/dateUtils";
-import { Button, Card, CardHeading, Table, Td, Th } from "../components/ui";
+import { Badge, Button, Card, CardHeading, Table, Td, Th } from "../components/ui";
 
 export default function Hiring() {
   const game = useGameStore((s) => s.game)!;
@@ -25,9 +26,17 @@ export default function Hiring() {
   const candidate = opening?.candidates.find((c) => c.id === openCandidateId) ?? opening?.candidates[0] ?? null;
   const openingNeedsFacility = opening && (opening.roleId === "production-worker" || opening.roleId === "machine-operator") && game.company.facilities.length > 1;
 
+  const hiringDelegated = game.company.delegation.hiring.authority !== "player-approval";
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-bold">Hiring</h1>
+
+      {hiringDelegated && (
+        <Badge tone="info">
+          Hiring is delegated ({game.company.delegation.hiring.authority.replace("-", " ")}) — department managers may fill openings on their own. See <Link className="underline" to="/game/management">Management</Link> for the decision log.
+        </Badge>
+      )}
 
       <Card>
         <CardHeading>Post a New Opening</CardHeading>
@@ -48,15 +57,21 @@ export default function Hiring() {
       <Card>
         <CardHeading>Open Positions ({openPositions.length})</CardHeading>
         <div className="flex flex-col gap-1">
-          {openPositions.map((o) => (
-            <button
-              key={o.id}
-              onClick={() => { setOpenOpeningId(o.id); setOpenCandidateId(null); }}
-              className={`rounded-md px-2.5 py-2 text-left text-sm ${opening?.id === o.id ? "bg-emerald-600/20" : "hover:bg-ink-800"}`}
-            >
-              {o.title} — {o.candidates.length} candidate(s), posted week {o.postedWeek}
-            </button>
-          ))}
+          {openPositions.map((o) => {
+            const pendingManagerReview = game.company.managerDecisionLog.some(
+              (d) => d.status === "pending-approval" && d.domain === "hiring" && d.proposal?.openingId === o.id,
+            );
+            return (
+              <button
+                key={o.id}
+                onClick={() => { setOpenOpeningId(o.id); setOpenCandidateId(null); }}
+                className={`flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm ${opening?.id === o.id ? "bg-emerald-600/20" : "hover:bg-ink-800"}`}
+              >
+                <span>{o.title} — {o.candidates.length} candidate(s), posted week {o.postedWeek}</span>
+                {pendingManagerReview && <Badge tone="warn">Manager recommendation pending your approval</Badge>}
+              </button>
+            );
+          })}
           {openPositions.length === 0 && <p className="text-sm text-ink-400">No open positions.</p>}
         </div>
       </Card>

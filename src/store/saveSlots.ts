@@ -1,4 +1,5 @@
 import type { GameState } from "../types/core";
+import { migrateGameState } from "../engine/migrate";
 
 const INDEX_KEY = "biz-sim:index";
 const SAVE_PREFIX = "biz-sim:save:";
@@ -46,7 +47,8 @@ export function saveGame(state: GameState): void {
 export function loadGame(saveId: string): GameState | null {
   try {
     const raw = localStorage.getItem(SAVE_PREFIX + saveId);
-    return raw ? (JSON.parse(raw) as GameState) : null;
+    if (!raw) return null;
+    return migrateGameState(JSON.parse(raw));
   } catch {
     return null;
   }

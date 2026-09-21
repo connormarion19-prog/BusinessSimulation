@@ -11,6 +11,7 @@ import { advanceEconomy } from "./economy";
 import { weekDate } from "./dateUtils";
 import { getCash } from "./company";
 import { computeManagementSnapshot } from "./management";
+import { runDelegatedHiring, runDelegatedPurchasing } from "./delegation";
 import { LOCATIONS_BY_ID } from "../data/locations";
 
 function determineStage(employeeCount: number): GameState["company"]["stage"] {
@@ -47,6 +48,16 @@ export function advanceWeek(state: GameState): GameState {
     founderEffectiveness: managementSnapshot.founderEffectiveness,
     eventFlags: {},
   };
+
+  // Delegated managers act before this week's own simulation runs, so a rebalanced supplier mix or a
+  // freshly filled opening is already in effect for the week it's decided in.
+  const delegatedDecisions = [
+    ...runDelegatedPurchasing(state.company, industry.employeeRoles, newWeek, date),
+    ...runDelegatedHiring(state.company, industry.employeeRoles, newWeek, date, state.rng),
+  ];
+  if (delegatedDecisions.length > 0) {
+    state.company.managerDecisionLog = [...delegatedDecisions, ...state.company.managerDecisionLog].slice(0, 60);
+  }
 
   const weekResult = industry.simulateWeek(ctx);
   state.company.entries.push(...weekResult.entries);
@@ -153,8 +164,14 @@ export function advanceWeek(state: GameState): GameState {
 
   // Pending decisions
   const decisions: PendingDecision[] = [];
+  const openingIdsAwaitingManagerApproval = new Set(
+    state.company.managerDecisionLog
+      .filter((d) => d.status === "pending-approval" && d.domain === "hiring")
+      .map((d) => d.proposal?.openingId)
+      .filter((id): id is string => !!id),
+  );
   for (const opening of state.company.openPositions) {
-    if (opening.status === "open" && opening.candidates.length > 0) {
+    if (opening.status === "open" && opening.candidates.length > 0 && !openingIdsAwaitingManagerApproval.has(opening.id)) {
       decisions.push({
         id: `dec-hiring-${opening.id}`,
         kind: "review-candidate",
@@ -165,6 +182,18 @@ export function advanceWeek(state: GameState): GameState {
         relatedId: opening.id,
       });
     }
+  }
+  for (const decision of state.company.managerDecisionLog) {
+    if (decision.status !== "pending-approval") continue;
+    decisions.push({
+      id: `dec-manager-${decision.id}`,
+      kind: "manager-decision-pending",
+      week: newWeek,
+      title: `${decision.managerName} needs sign-off: ${decision.headline}`,
+      detail: `${decision.reasoning[0] ?? ""} Involves roughly $${Math.round(decision.amountInvolved).toLocaleString()}, above their current authority. Review on the Management tab.`,
+      severity: "warning",
+      relatedId: decision.id,
+    });
   }
   for (const facility of state.company.facilities) {
     if (facility.condition < 45) {

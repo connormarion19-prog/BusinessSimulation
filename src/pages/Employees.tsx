@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useGameStore } from "../store/useGameStore";
 import { getIndustryDefinition } from "../industries/registry";
+import { computeManagerSpanCapacity, directReportsOf } from "../engine/management";
 import { formatMoney } from "../engine/dateUtils";
 import { Badge, Button, Card, CardHeading, ProgressBar, Table, Td, Th } from "../components/ui";
 
@@ -85,6 +86,13 @@ export default function Employees() {
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-ink-700 p-2.5 text-xs">
               <div>Reports to: <span className="text-ink-100">{managerName(selected.managerId)}</span></div>
               {selected.facilityId && <div>Facility: <span className="text-ink-100">{facilityName(selected.facilityId)}</span></div>}
+              {selected.department === "management" && (
+                <div>
+                  Direct reports: <span className="text-ink-100">{directReportsOf(game.company, selected.id).length}</span>
+                  {" "}/ effective capacity <span className="text-ink-100">{computeManagerSpanCapacity(selected)}</span>
+                  {directReportsOf(game.company, selected.id).length > computeManagerSpanCapacity(selected) && <Badge tone="bad">Overloaded</Badge>}
+                </div>
+              )}
               {possibleManagers.length > 0 && (
                 <label className="flex items-center gap-1.5">
                   <span className="text-ink-400">Reassign to:</span>

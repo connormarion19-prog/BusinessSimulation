@@ -2,7 +2,7 @@ import type { Department, Employee, EmployeeTraits } from "../types/employee";
 import type { RngState } from "./rng";
 import { nextNormal } from "./rng";
 
-const RELEVANT_TRAITS: Record<Department, (keyof EmployeeTraits)[]> = {
+export const RELEVANT_TRAITS: Record<Department, (keyof EmployeeTraits)[]> = {
   production: ["technicalAbility", "reliability", "adaptability"],
   purchasing: ["judgment", "organization", "communication"],
   sales: ["communication", "initiative", "adaptability"],

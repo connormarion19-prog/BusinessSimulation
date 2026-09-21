@@ -8,6 +8,7 @@ import Operations from "./pages/Operations";
 import Products from "./pages/Products";
 import Facilities from "./pages/Facilities";
 import Employees from "./pages/Employees";
+import Management from "./pages/Management";
 import Hiring from "./pages/Hiring";
 import Customers from "./pages/Customers";
 import Suppliers from "./pages/Suppliers";
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="products" element={<Products />} />
           <Route path="facilities" element={<Facilities />} />
           <Route path="employees" element={<Employees />} />
+          <Route path="management" element={<Management />} />
           <Route path="hiring" element={<Hiring />} />
           <Route path="customers" element={<Customers />} />
           <Route path="suppliers" element={<Suppliers />} />

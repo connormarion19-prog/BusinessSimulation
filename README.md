@@ -69,6 +69,20 @@ Everything runs client-side; saves persist to `localStorage` under multiple name
   - `facilities.ts` — opens a new facility at a chosen location, scaling its
     lease/utilities/purchase value by that location's real rent index and posting
     a security-deposit entry through the ledger.
+  - `delegation.ts` — real delegated decision-making, not a cosmetic toggle. When
+    the player grants a manager authority, `runDelegatedPurchasing` periodically
+    scores every supplier on price/reliability/quality and gradually reallocates
+    purchasing toward whoever's performing better; `runDelegatedHiring` scores open
+    candidates against the role (an imperfect read, noisier without an interview on
+    file) and hires the best one. Both post a `ManagerDecisionLogEntry` with real,
+    computed reasoning, and both respect an authority threshold (a dollar amount of
+    purchasing exposure, or a salary ceiling) above which the decision is proposed
+    rather than applied, and sits on the Management tab awaiting the player's
+    approve/reject.
+  - `migrate.ts` — backfills every field added since the original release (capacity
+    allocation, supplier allocation, `facilityId`, delegation settings, ...) so a
+    save from an earlier phase of the game keeps loading and simulating instead of
+    crashing, without altering any of the player's existing data.
 - **`src/industries`** — the industry-module system. `IndustryDefinition` is the
   interface every industry implements (products, roles, facilities, suppliers,
   customer segments, event pool, `createInitialState`, `simulateWeek`).
@@ -95,11 +109,12 @@ Everything runs client-side; saves persist to `localStorage` under multiple name
   mutation logic lives in testable `src/engine` functions (`products.ts`,
   `suppliers.ts`, `management.ts`, `facilities.ts`) that the store just calls.
   `saveSlots.ts` handles multi-slot localStorage persistence.
-- **`src/pages`** — Overview, Finance, Operations, Products, **Facilities**,
-  Employees (now with promotion, manager reassignment, and reporting-line display),
-  Hiring (facility assignment for plant roles once there's more than one site),
-  Customers, Suppliers, Competitors, Market, Reports, Company/Ownership, Debug,
-  Settings.
+- **`src/pages`** — Overview, Finance, Operations, Products, Facilities,
+  Employees (promotion, manager reassignment, span-of-control, reporting-line
+  display), Hiring (facility assignment for plant roles, delegation status),
+  **Management** (delegated authority per domain, the manager decision log,
+  pending approvals, span-of-control table), Customers, Suppliers, Competitors,
+  Market, Reports, Company/Ownership, Debug, Settings.
 
 ## What's implemented
 
@@ -167,33 +182,68 @@ specific facility at hire time; every other role (sales, purchasing, accounting,
 management, quality, maintenance) serves the whole company regardless of location,
 a deliberate scope simplification noted honestly rather than half-implemented.
 
+**Delegated authority & manager decisions (Management tab).** Grant a manager real
+authority instead of just a passive skill bonus. For Purchasing and Hiring, set
+authority to player-approval (default — identical to having no delegation),
+threshold (the manager acts on their own up to a $ amount, bigger moves queue for
+your sign-off), or full authority. A delegated purchasing manager periodically
+compares suppliers on price/reliability/quality and gradually rebalances allocation
+toward whoever's actually performing better — never a lurch, and never touching
+allocation the player hasn't authorized. A delegated department manager scores
+open candidates (using the role's relevant traits, an interview already on file if
+you gathered one, and their own judgment) and hires the best one outright, exactly
+as if the player had walked through Hiring themselves — the new employee shows up
+on payroll, reports to that manager, and the whole thing is a real posted
+transaction, not a cosmetic event. Every delegated decision — auto-approved or
+pending — is logged with genuine computed reasoning ("Supplier B's price is
+running 12% below Supplier A's... more reliable lately...") on the Management tab,
+so the player can always see what a manager did and why, and approve or reject
+anything above their authorized threshold.
+
+**Manager span of control.** Every manager has a real capacity for direct reports,
+derived from their own leadership/judgment/organization — a strong manager can run
+more people than a weak one. Exceeding it visibly degrades their output bonus (down
+to a floor) and shows up both in their weekly evaluation narrative and on the
+Management tab's span-of-control table, so a company that just keeps stacking
+reports onto one manager instead of building another layer actually pays for it.
+
+**Save migration.** Saves from any earlier phase of the game (single-product,
+single-supplier, no management hierarchy, no delegation) are backfilled with safe
+defaults on load — `engine/migrate.ts` — rather than crashing or silently losing
+data; old companies pick up right where they left off with every new system
+available to them.
+
 **Explicitly out of scope for this pass**: the other 14 industries, international
-expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, configurable
-manager authority thresholds (full authority / approval-required / recommendation-
-only — the hierarchy's *reporting and performance* mechanics are real, but spending
-*authority* levels aren't wired up yet), multi-location inventory (raw materials and
-finished goods remain a shared company-wide pool rather than tracked per facility),
-and deeper competitor AI (they react to the market, not yet to specific player moves
-like a new facility or product launch). These are the natural next phases on top of
-a validated, tested core engine.
+expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, multi-location
+inventory (raw materials and finished goods remain a shared company-wide pool rather
+than tracked per facility, so there's no internal-transfer system yet), true
+per-region domestic markets (facility costs already scale by location, but demand
+and competitor presence are still one national pool rather than segmented by
+state/region), and deeper competitor AI (they react to the market, not yet to
+specific player moves like a new facility or product launch). These are the natural
+next phases on top of a validated, tested core engine.
 
 ## Testing
 
-`npm test` runs Vitest coverage of the systems most likely to break silently:
-double-entry posting/rejection of unbalanced entries, trial-balance integrity across
-mixed transactions, loan amortization to a zero balance, weekly evaluations
-generating from real hired-employee data, a JSON save/load round trip that keeps
-simulating correctly afterward, a **260-week (5 calendar year) simulated run** that
-asserts the accounting identity holds every single week, a dedicated suite for
-multi-product/multi-supplier operations (capacity/purchasing allocation always
-rebalances to 1, discontinuing a product still sells off remaining inventory, two
-product lines against three suppliers stay balanced for 20-30 weeks), a management-
-hierarchy suite (management load/capacity/founder-effectiveness are pure,
-deterministic functions of company state; promoting a manager measurably improves
-founder effectiveness and correctly reassigns unmanaged reports; promotion is
-rejected into the wrong department), and a multi-facility suite (a new facility's
-costs really do scale by location, capacity aggregates correctly across facilities,
-each facility wears down independently based on its own utilization, and running
-two facilities with assigned staff for 25 weeks stays balanced throughout) —
-matching the design rule that an unbalanced ledger is a bug, never a tolerated
-state.
+`npm test` runs 42 Vitest cases covering the systems most likely to break silently:
+double-entry posting/rejection of unbalanced entries, trial-balance integrity,
+loan amortization to a zero balance, weekly evaluations generating from real
+hired-employee data, a JSON save/load round trip, a **260-week (5 calendar year)
+simulated run** asserting the accounting identity every single week, multi-product/
+multi-supplier operations (allocation always rebalances to 1, discontinuing a
+product still sells off inventory, two product lines against three suppliers stay
+balanced for 20-30 weeks), management hierarchy (load/capacity/founder-effectiveness
+are pure deterministic functions of company state; promoting a manager improves
+founder effectiveness and correctly reassigns reports; wrong-department promotion is
+rejected), multi-facility operations (a new facility's costs scale by location,
+capacity aggregates correctly, each facility wears independently, two facilities
+with staff stay balanced for 25 weeks), **delegation** (manual mode is provably
+unaffected by delegation settings at their default; full-authority purchasing
+gradually shifts allocation toward the better-scoring supplier and logs why;
+a reallocation or hire beyond the authorized threshold is proposed, not applied,
+until the player approves or rejects it; a rejected hire leaves the opening
+genuinely open; both domains together stay balanced for 26 weeks), and **save
+migration** (a fixture shaped like the very first release — no delegation, no
+per-facility employees, no multi-product fields — is backfilled correctly and can
+keep simulating with a balanced ledger). An unbalanced ledger is treated as a bug,
+never a tolerated state, anywhere in this suite.

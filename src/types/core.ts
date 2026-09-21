@@ -124,6 +124,42 @@ export interface ManagementSnapshot {
   managerCount: number;
 }
 
+/**
+ * player-approval: nothing happens automatically, exactly like a company with no delegation.
+ * threshold: the manager acts on their own up to thresholdAmount of exposure; bigger decisions queue for approval.
+ * full-authority: the manager always acts on their own.
+ */
+export type AuthorityLevel = "player-approval" | "threshold" | "full-authority";
+
+export interface DelegationDomainSettings {
+  authority: AuthorityLevel;
+  /** Purchasing: max $ shift in weekly purchasing exposure a manager may reallocate unprompted. Hiring: max annual salary a manager may offer unprompted. */
+  thresholdAmount: number;
+}
+
+export interface DelegationSettings {
+  purchasing: DelegationDomainSettings;
+  hiring: DelegationDomainSettings;
+}
+
+export type ManagerDecisionDomain = "purchasing" | "hiring";
+export type ManagerDecisionStatus = "auto-approved" | "pending-approval" | "player-approved" | "player-rejected";
+
+export interface ManagerDecisionLogEntry {
+  id: string;
+  week: number;
+  date: string;
+  managerId: string;
+  managerName: string;
+  domain: ManagerDecisionDomain;
+  headline: string;
+  reasoning: string[];
+  amountInvolved: number;
+  status: ManagerDecisionStatus;
+  /** Domain-specific payload needed to apply the decision later if it's approved after the fact. */
+  proposal?: { supplierAllocations?: Record<string, number>; openingId?: string; candidateId?: string; salaryWeekly?: number; facilityId?: string };
+}
+
 export type DecisionKind =
   | "review-candidate"
   | "review-evaluation"
@@ -134,7 +170,8 @@ export type DecisionKind =
   | "capacity-constrained"
   | "cash-warning"
   | "facility-maintenance"
-  | "management-overload";
+  | "management-overload"
+  | "manager-decision-pending";
 
 export interface PendingDecision {
   id: string;
@@ -174,6 +211,8 @@ export interface Company {
   historyLog: HistoryEvent[];
   ownership: Ownership;
   targetCustomerSegment: string;
+  delegation: DelegationSettings;
+  managerDecisionLog: ManagerDecisionLogEntry[];
 }
 
 export interface EconomyState {

@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/game/products", label: "Products" },
   { to: "/game/facilities", label: "Facilities" },
   { to: "/game/employees", label: "Employees" },
+  { to: "/game/management", label: "Management" },
   { to: "/game/hiring", label: "Hiring" },
   { to: "/game/customers", label: "Customers" },
   { to: "/game/suppliers", label: "Suppliers" },
@@ -37,6 +38,7 @@ export default function Layout() {
 
   const cash = getCash(game.company, game.week);
   const pendingCount = game.pendingDecisions.length;
+  const pendingManagerDecisions = game.company.managerDecisionLog.filter((d) => d.status === "pending-approval").length;
 
   return (
     <div className="flex min-h-screen bg-ink-950 text-ink-100">
@@ -61,6 +63,9 @@ export default function Layout() {
               {item.label}
               {item.to === "/game" && pendingCount > 0 && (
                 <span className="ml-2 rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] text-white">{pendingCount}</span>
+              )}
+              {item.to === "/game/management" && pendingManagerDecisions > 0 && (
+                <span className="ml-2 rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] text-white">{pendingManagerDecisions}</span>
               )}
             </NavLink>
           ))}

@@ -2,6 +2,7 @@ import type { IndustryDefinition, MarketState, NewCompanyParams } from "../../ty
 import type { Company } from "../../types/core";
 import type { RngState } from "../../engine/rng";
 import { seedJournalEntryCounter, round2 } from "../../engine/ledger";
+import { defaultDelegationSettings } from "../../engine/delegation";
 import { buildFoundingEntries } from "../../engine/financing";
 import { nextInt, nextRange, pick } from "../../engine/rng";
 import { PAPER_ROLES } from "./roles";
@@ -118,6 +119,8 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
     ],
     ownership,
     targetCustomerSegment: segment.id,
+    delegation: defaultDelegationSettings(),
+    managerDecisionLog: [],
   };
 
   const market: MarketState = {

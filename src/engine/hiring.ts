@@ -1,7 +1,8 @@
-import type { Candidate, EmployeeEducation, EmployeeRoleTemplate, EmployeeTraits, InterviewQuestion, PriorEmployer } from "../types/employee";
+import type { Candidate, Employee, EmployeeEducation, EmployeeRoleTemplate, EmployeeTraits, InterviewQuestion, JobOpening, PriorEmployer } from "../types/employee";
 import type { RngState } from "./rng";
 import { nextFloat, nextInt, nextNormal, pick, weightedPick } from "./rng";
 import { CITIES, FIELDS_BUSINESS, FIELDS_GENERAL, FIELDS_TECHNICAL, FIRST_NAMES, LAST_NAMES, PRIOR_EMPLOYERS, SCHOOLS } from "../data/names";
+import { RELEVANT_TRAITS } from "./performance";
 
 let candidateCounter = 0;
 function nextCandidateId(): string {
@@ -173,6 +174,55 @@ export function answerInterviewQuestion(candidate: Candidate, question: Intervie
     ],
   };
   return pick(rng, templates[tier]);
+}
+
+/**
+ * A hiring manager's (imperfect) read of how good a candidate would be in this role — the same
+ * ground truth an interview reveals gradually, but scored all at once from the manager's own
+ * judgment and whatever interview signal already exists (an un-interviewed candidate is a noisier read).
+ */
+export function scoreCandidateForRole(candidate: Candidate, role: EmployeeRoleTemplate, evaluatorJudgment: number, rng: RngState): number {
+  const traits = RELEVANT_TRAITS[role.department];
+  const trueSkill = traits.reduce((s, t) => s + candidate.traits[t], 0) / traits.length;
+  const hasInterviewSignal = Object.keys(candidate.interviewNotes).length > 0;
+  const baseNoiseStd = hasInterviewSignal ? 8 : 16;
+  const evaluatorSkillAdj = (evaluatorJudgment - 50) / 50; // -1..1; better judgment reads candidates more accurately
+  const noise = nextNormal(rng, 0, baseNoiseStd * (1 - evaluatorSkillAdj * 0.3));
+  return Math.max(0, Math.min(100, trueSkill + noise));
+}
+
+export function buildEmployeeFromCandidate(params: {
+  candidate: Candidate;
+  opening: JobOpening;
+  week: number;
+  salaryWeekly: number;
+  facilityId: string | null;
+  managerId: string | null;
+}): Employee {
+  return {
+    id: `emp-${params.week}-${Math.round(Math.random() * 1e6)}`,
+    name: params.candidate.name,
+    age: params.candidate.age,
+    location: params.candidate.location,
+    roleId: params.candidate.roleId,
+    title: params.opening.title,
+    department: params.opening.department,
+    hireWeek: params.week,
+    salaryWeekly: params.salaryWeekly,
+    managerId: params.managerId,
+    facilityId: params.facilityId,
+    traits: params.candidate.traits,
+    education: params.candidate.education,
+    priorEmployers: params.candidate.priorEmployers,
+    status: "active",
+    morale: 62,
+    fatigue: 15,
+    performanceHistory: [],
+    cumulativeErrors: 0,
+    cumulativeTasksCompleted: 0,
+    lastRaiseWeek: null,
+    onPip: false,
+  };
 }
 
 export function generateReferenceCheckNote(candidate: Candidate, _rng: RngState): string {

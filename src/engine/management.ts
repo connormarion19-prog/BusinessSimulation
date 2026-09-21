@@ -3,10 +3,31 @@ import type { Department, Employee, EmployeeRoleTemplate } from "../types/employ
 
 const FOUNDER_MANAGEMENT_BASELINE = 9;
 const MANAGER_BASE_CAPACITY = 11;
+const SPAN_BASE_CAPACITY = 6;
+const SPAN_SKILL_RANGE = 8;
 
 function managerSkillFactor(employee: Employee): number {
   const avg = (employee.traits.leadership + employee.traits.judgment + employee.traits.organization) / 3;
   return Math.max(0.55, Math.min(1.35, avg / 60));
+}
+
+/** How many direct reports this manager can effectively run, from their own leadership/judgment/organization. */
+export function computeManagerSpanCapacity(manager: Employee): number {
+  const skill = managerSkillFactor(manager); // 0.55 - 1.35
+  const skillFraction = (skill - 0.55) / (1.35 - 0.55);
+  return Math.round(SPAN_BASE_CAPACITY + SPAN_SKILL_RANGE * skillFraction);
+}
+
+export function directReportsOf(company: Company, managerId: string): Employee[] {
+  return company.employees.filter((e) => e.status === "active" && e.managerId === managerId);
+}
+
+/** 1.0 at or under capacity; degrades toward 0.5 as a manager is stretched further past what they can run. */
+export function computeSpanOverloadFactor(manager: Employee, reportCount: number): number {
+  const capacity = computeManagerSpanCapacity(manager);
+  if (reportCount <= capacity || capacity <= 0) return 1;
+  const overloadRatio = reportCount / capacity;
+  return Math.max(0.5, Math.min(1, 1 - (overloadRatio - 1) * 0.5));
 }
 
 /** How much day-to-day management the company currently requires, from its own scale — headcount, facilities, active product lines, and accounts on the books. */

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { GameState } from "../types/core";
+import type { AuthorityLevel, GameState } from "../types/core";
 import type { Employee } from "../types/employee";
 import type { NewCompanyParams } from "../types/industry";
 import { createNewGame } from "../engine/newGame";
@@ -11,6 +11,7 @@ import { addProductToCompany, discontinueProductOnCompany } from "../engine/prod
 import { addSupplierToCompany, removeSupplierFromCompany } from "../engine/suppliers";
 import { openFacilityForCompany } from "../engine/facilities";
 import { promoteEmployeeToManager } from "../engine/management";
+import { approveManagerDecision as approveManagerDecisionEngine, rejectManagerDecision as rejectManagerDecisionEngine } from "../engine/delegation";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
 function clone<T>(value: T): T {
@@ -45,6 +46,9 @@ interface GameStoreState {
   promoteEmployee: (employeeId: string, managerRoleId: string) => void;
   reassignManager: (employeeId: string, managerId: string | null) => void;
   openFacility: (facilityTemplateId: string, locationId: string) => void;
+  setDelegationAuthority: (domain: "purchasing" | "hiring", authority: AuthorityLevel, thresholdAmount: number) => void;
+  approveManagerDecision: (decisionId: string) => void;
+  rejectManagerDecision: (decisionId: string) => void;
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
@@ -337,6 +341,30 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const result = openFacilityForCompany(next.company, industry, facilityTemplateId, locationId, next.week, next.currentDate);
     if (!result.ok) return;
     next.company.entries.push(...result.entries);
+    set({ game: next });
+  },
+
+  setDelegationAuthority: (domain, authority, thresholdAmount) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    next.company.delegation[domain] = { authority, thresholdAmount: Math.max(0, thresholdAmount) };
+    set({ game: next });
+  },
+
+  approveManagerDecision: (decisionId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    if (!approveManagerDecisionEngine(next.company, decisionId, next.week, next.currentDate)) return;
+    set({ game: next });
+  },
+
+  rejectManagerDecision: (decisionId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    if (!rejectManagerDecisionEngine(next.company, decisionId)) return;
     set({ game: next });
   },
 }));

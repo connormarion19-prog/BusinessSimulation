@@ -10,6 +10,7 @@ import { rollWeeklyEvents } from "../../engine/events";
 import { PAPER_EVENTS, supplierShortfallFlagKey } from "./events";
 import { PAPER_PRODUCTS_BY_ID } from "./products";
 import { PAPER_ROLES_BY_ID } from "./roles";
+import { computeManagerSpanCapacity, computeSpanOverloadFactor, directReportsOf } from "../../engine/management";
 
 const FOUNDER_BASE_UNITS_PER_WEEK = 95;
 const FOUNDER_BASE_SKILL = 62;
@@ -47,10 +48,12 @@ function managerForDepartment(ctx: IndustrySimContext, department: Department): 
   );
 }
 
-function computeManagerBonus(manager: Employee, perfByEmployeeId: Record<string, PerformanceResult>): number {
+function computeManagerBonus(manager: Employee, perfByEmployeeId: Record<string, PerformanceResult>, company: IndustrySimContext["company"]): number {
   const perf = perfByEmployeeId[manager.id];
   if (!perf) return 1;
-  return clamp(1 + (perf.coreSkill - 55) / 180, 0.9, 1.25);
+  const skillBonus = clamp(1 + (perf.coreSkill - 55) / 180, 0.9, 1.25);
+  const reportCount = directReportsOf(company, manager.id).length;
+  return skillBonus * computeSpanOverloadFactor(manager, reportCount);
 }
 
 interface ProductWeekResult {
@@ -91,7 +94,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     perfByEmployeeId[emp.id] = computeWeeklyPerformance(emp, week, rng);
   }
   const plantManager = managerForDepartment(ctx, "production");
-  const plantManagerBonus = plantManager ? computeManagerBonus(plantManager, perfByEmployeeId) : 1;
+  const plantManagerBonus = plantManager ? computeManagerBonus(plantManager, perfByEmployeeId, company) : 1;
 
   // ---- 2. Purchasing: split orders across suppliers by allocation, each negotiates and delivers independently ----
   const purchasingManager = managerForDepartment(ctx, "purchasing");
@@ -330,7 +333,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   let salesEffectiveness: number;
   if (salesManager && salesReports.length > 0) {
     const avgRepOutput = salesReports.reduce((s, r) => s + perfByEmployeeId[r.id].outputFactor, 0) / salesReports.length;
-    salesEffectiveness = clamp(avgRepOutput * computeManagerBonus(salesManager, perfByEmployeeId), 0.5, 1.5);
+    salesEffectiveness = clamp(avgRepOutput * computeManagerBonus(salesManager, perfByEmployeeId, company), 0.5, 1.5);
   } else if (salesManager) {
     salesEffectiveness = clamp(perfByEmployeeId[salesManager.id].outputFactor, 0.5, 1.4);
   } else if (salesRep) {
@@ -611,6 +614,11 @@ function buildManagerNarrative(
   highlights.push(`Team flagged ${totalErrors} error(s) this week; average team morale is ${Math.round(avgMorale)}/100.`);
   if (avgMorale < 45) concerns.push("Team morale is low enough to be a retention risk.");
   if (totalErrors > reports.length * 2) concerns.push("Error count is high relative to team size — may need closer supervision or training.");
+
+  const spanCapacity = computeManagerSpanCapacity(manager);
+  if (reports.length > spanCapacity) {
+    concerns.push(`${reports.length} direct reports is above the ${spanCapacity} this manager can effectively run — team effectiveness is degraded until a second manager or fewer reports are in place.`);
+  }
 
   return {
     highlights,
