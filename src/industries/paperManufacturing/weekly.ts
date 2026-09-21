@@ -1,6 +1,6 @@
 import type { IndustrySimContext, IndustryWeekResult } from "../../types/industry";
 import type { JournalEntry } from "../../types/finance";
-import type { Employee, WeeklyEvaluation } from "../../types/employee";
+import type { Department, Employee, WeeklyEvaluation } from "../../types/employee";
 import type { SupplierRelationship } from "../../types/core";
 import { makeEntry, dr, cr, round2, accountBalance } from "../../engine/ledger";
 import { chance, nextRange } from "../../engine/rng";
@@ -9,12 +9,14 @@ import { buildEvaluation } from "../../engine/evaluation";
 import { rollWeeklyEvents } from "../../engine/events";
 import { PAPER_EVENTS, supplierShortfallFlagKey } from "./events";
 import { PAPER_PRODUCTS_BY_ID } from "./products";
+import { PAPER_ROLES_BY_ID } from "./roles";
 
 const FOUNDER_BASE_UNITS_PER_WEEK = 95;
 const FOUNDER_BASE_SKILL = 62;
 const PRODUCTION_WORKER_BASE_UNITS = 120;
 const MACHINE_OPERATOR_BASE_UNITS = 170;
 const PAYROLL_TAX_RATE = 0.0765;
+const FOUNDER_MIN_EFFECTIVENESS_APPLIED = 0.35;
 
 const PAYROLL_ROUTING: Record<string, "labor" | "overhead" | "admin" | "sales"> = {
   "production-worker": "labor",
@@ -22,8 +24,10 @@ const PAYROLL_ROUTING: Record<string, "labor" | "overhead" | "admin" | "sales"> 
   "maintenance-tech": "overhead",
   "quality-inspector": "overhead",
   "purchasing-agent": "overhead",
+  "purchasing-manager": "overhead",
   "plant-manager": "overhead",
   "sales-rep": "sales",
+  "sales-manager": "sales",
   bookkeeper: "admin",
   controller: "admin",
 };
@@ -34,6 +38,19 @@ function clamp(n: number, min: number, max: number): number {
 
 function activeByRole(ctx: IndustrySimContext, roleId: string): Employee | undefined {
   return ctx.company.employees.find((e) => e.status === "active" && e.roleId === roleId);
+}
+
+/** The active manager (department: "management") whose role oversees the given operational department, if one exists. */
+function managerForDepartment(ctx: IndustrySimContext, department: Department): Employee | undefined {
+  return ctx.company.employees.find(
+    (e) => e.status === "active" && e.department === "management" && PAPER_ROLES_BY_ID[e.roleId]?.managesDepartment === department,
+  );
+}
+
+function computeManagerBonus(manager: Employee, perfByEmployeeId: Record<string, PerformanceResult>): number {
+  const perf = perfByEmployeeId[manager.id];
+  if (!perf) return 1;
+  return clamp(1 + (perf.coreSkill - 55) / 180, 0.9, 1.25);
 }
 
 interface ProductWeekResult {
@@ -49,13 +66,14 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   const narrativeNotes: string[] = [];
   const evaluations: WeeklyEvaluation[] = [];
   ctx.eventFlags = {};
+  const founderEffectiveness = clamp(ctx.founderEffectiveness, FOUNDER_MIN_EFFECTIVENESS_APPLIED, 1);
 
   const eventResult = rollWeeklyEvents(PAPER_EVENTS, ctx, ctx.difficulty);
   entries.push(...eventResult.entries);
   narrativeNotes.push(...eventResult.narratives);
   const historyEvents = [...eventResult.historyEvents];
 
-  const facility = company.facilities[0];
+  const homeFacility = company.facilities[0];
   const activeProducts = company.products.filter((p) => p.active);
   const sellableProducts = company.products.filter((p) => p.active || p.inventoryUnits > 0.5);
   for (const product of company.products) {
@@ -72,20 +90,22 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   for (const emp of activeEmployees) {
     perfByEmployeeId[emp.id] = computeWeeklyPerformance(emp, week, rng);
   }
-  const plantManager = activeByRole(ctx, "plant-manager");
-  const managerBonus = plantManager ? clamp(1 + (perfByEmployeeId[plantManager.id].coreSkill - 55) / 180, 0.9, 1.25) : 1;
+  const plantManager = managerForDepartment(ctx, "production");
+  const plantManagerBonus = plantManager ? computeManagerBonus(plantManager, perfByEmployeeId) : 1;
 
   // ---- 2. Purchasing: split orders across suppliers by allocation, each negotiates and delivers independently ----
+  const purchasingManager = managerForDepartment(ctx, "purchasing");
   const purchasingAgent = activeByRole(ctx, "purchasing-agent");
-  const purchasingSkill = purchasingAgent
-    ? perfByEmployeeId[purchasingAgent.id].coreSkill
-    : FOUNDER_BASE_SKILL * (0.5 + company.founderAllocation.purchasing);
+  const purchasingSkillSource = purchasingManager ?? purchasingAgent;
+  const purchasingSkill = purchasingSkillSource
+    ? perfByEmployeeId[purchasingSkillSource.id].coreSkill
+    : FOUNDER_BASE_SKILL * (0.5 + company.founderAllocation.purchasing) * founderEffectiveness;
   const purchasingEffectiveness = clamp(purchasingSkill / 65, 0.5, 1.4);
   const bufferWeeks = clamp(1 + purchasingEffectiveness, 1, 3.5);
 
-  const machineCapacity = facility.baseWeeklyCapacityUnits * (facility.condition / 100);
+  const totalMachineCapacity = company.facilities.reduce((s, f) => s + f.baseWeeklyCapacityUnits * (f.condition / 100), 0);
   const projectedWeeklyConsumption = activeProducts.reduce(
-    (sum, p) => sum + machineCapacity * p.capacityAllocationPct * p.inputUnitsPerProductUnit,
+    (sum, p) => sum + totalMachineCapacity * p.capacityAllocationPct * p.inputUnitsPerProductUnit,
     0,
   );
   const targetInventory = projectedWeeklyConsumption * bufferWeeks;
@@ -97,9 +117,9 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   for (const supplier of company.suppliers) {
     const orderQty = totalOrderQty * supplier.purchaseAllocationPct;
     if (orderQty <= 0.5) continue;
-    const negotiatedDiscount = purchasingAgent
-      ? clamp((perfByEmployeeId[purchasingAgent.id].coreSkill - 50) / 100 * 0.06, 0, 0.06)
-      : clamp(company.founderAllocation.purchasing * 0.03, 0, 0.03);
+    const negotiatedDiscount = purchasingSkillSource
+      ? clamp((purchasingSkill - 50) / 100 * 0.06, 0, 0.06)
+      : clamp(company.founderAllocation.purchasing * 0.03 * founderEffectiveness, 0, 0.03);
     const unitPrice = round2(supplier.pricePerUnit * (1 - negotiatedDiscount));
     let deliveredQty = orderQty;
     if (chance(rng, 1 - supplier.reliability)) {
@@ -134,18 +154,31 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     narrativeNotes.push(`Purchasing tried to order ${Math.round(totalOrderQty)} pulp-tons, but nothing arrived this week.`);
   }
 
-  // ---- 3. Production: each active product claims its allocated share of machine + labor capacity ----
+  // ---- 3. Production: capacity is aggregated across every facility, then split across active products ----
   const productionEmployees = activeEmployees.filter((e) => e.roleId === "production-worker" || e.roleId === "machine-operator");
-  let totalLaborCapacity = company.founderAllocation.production * FOUNDER_BASE_UNITS_PER_WEEK * (FOUNDER_BASE_SKILL / 65);
+  const founderProductionContribution = company.founderAllocation.production * FOUNDER_BASE_UNITS_PER_WEEK * (FOUNDER_BASE_SKILL / 65) * founderEffectiveness;
+
+  const facilityLaborCapacity = new Map<string, number>();
+  const facilityMachineCapacity = new Map<string, number>();
+  for (const facility of company.facilities) {
+    facilityMachineCapacity.set(facility.id, facility.baseWeeklyCapacityUnits * (facility.condition / 100));
+    facilityLaborCapacity.set(facility.id, facility.id === homeFacility.id ? founderProductionContribution : 0);
+  }
+  let totalLaborCapacity = founderProductionContribution;
   for (const emp of productionEmployees) {
+    const facilityId = emp.facilityId && facilityLaborCapacity.has(emp.facilityId) ? emp.facilityId : homeFacility.id;
     const base = emp.roleId === "machine-operator" ? MACHINE_OPERATOR_BASE_UNITS : PRODUCTION_WORKER_BASE_UNITS;
-    totalLaborCapacity += base * perfByEmployeeId[emp.id].outputFactor * managerBonus;
+    const reportsToPlantManager = plantManager !== undefined && emp.managerId === plantManager.id;
+    const bonus = reportsToPlantManager ? plantManagerBonus : 1;
+    const contribution = base * perfByEmployeeId[emp.id].outputFactor * bonus;
+    facilityLaborCapacity.set(facilityId, (facilityLaborCapacity.get(facilityId) ?? 0) + contribution);
+    totalLaborCapacity += contribution;
   }
 
   const plannedByProduct = new Map<string, number>();
   let totalMaterialsNeeded = 0;
   for (const product of activeProducts) {
-    const productMachineCapacity = machineCapacity * product.capacityAllocationPct;
+    const productMachineCapacity = totalMachineCapacity * product.capacityAllocationPct;
     const productLaborCapacity = totalLaborCapacity * product.capacityAllocationPct;
     const planned = Math.max(0, Math.min(productMachineCapacity, productLaborCapacity));
     plannedByProduct.set(product.id, planned);
@@ -216,13 +249,27 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     entries.push(makeEntry({ week, date, memo: "Employer payroll taxes", source: "payroll-tax", lines: [dr("payroll-tax-expense", payrollTax), cr("cash", payrollTax)], cashFlowCategory: "operating" }));
   }
 
-  const leaseCost = facility.ownedOutright ? 0 : facility.weeklyLeaseCost;
-  const utilizationFraction = machineCapacity > 0 ? clamp(totalUnitsAttempted / machineCapacity, 0, 1.3) : 0;
-  const utilityCost = round2(facility.weeklyUtilityBaseCost * (0.5 + 0.5 * utilizationFraction));
-  overheadCostAllocated += leaseCost + utilityCost;
-  if (facility.ownedOutright) {
-    overheadDepreciation = round2(facility.purchaseValue / 520);
+  // Facility-level costs: each facility's own utilization drives its own decay and utility bill.
+  let totalFacilityOverhead = 0;
+  const facilityUtilizations: { name: string; utilization: number }[] = [];
+  for (const facility of company.facilities) {
+    const facMachineCap = facilityMachineCapacity.get(facility.id) ?? 0;
+    const facLaborCap = facilityLaborCapacity.get(facility.id) ?? 0;
+    const facPlanned = Math.min(facMachineCap, facLaborCap);
+    const utilizationFraction = facMachineCap > 0 ? clamp(facPlanned / facMachineCap, 0, 1.3) : 0;
+    facilityUtilizations.push({ name: facility.name, utilization: utilizationFraction });
+
+    const leaseCost = facility.ownedOutright ? 0 : facility.weeklyLeaseCost;
+    const utilityCost = round2(facility.weeklyUtilityBaseCost * (0.5 + 0.5 * utilizationFraction));
+    totalFacilityOverhead += leaseCost + utilityCost;
+    if (facility.ownedOutright) {
+      overheadDepreciation += round2(facility.purchaseValue / 520);
+    }
+
+    const decay = utilizationFraction * 1.4 - (activeByRole(ctx, "maintenance-tech") ? 1.8 : 0.3);
+    facility.condition = clamp(round2(facility.condition - decay), 20, 100);
   }
+  overheadCostAllocated += totalFacilityOverhead;
 
   if (laborCostAllocated > 0) {
     entries.push(makeEntry({ week, date, memo: "Direct production labor capitalized to finished goods", source: "production-labor", lines: [dr("finished-goods", round2(laborCostAllocated)), cr("cash", round2(laborCostAllocated))], cashFlowCategory: "operating" }));
@@ -245,17 +292,14 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   }
 
   entries.push(
-    makeEntry({ week, date, memo: "General business insurance", source: "insurance", lines: [dr("insurance-expense", 110), cr("cash", 110)], cashFlowCategory: "operating" }),
+    makeEntry({ week, date, memo: "General business insurance", source: "insurance", lines: [dr("insurance-expense", 110 * company.facilities.length), cr("cash", 110 * company.facilities.length)], cashFlowCategory: "operating" }),
   );
-
-  const decay = utilizationFraction * 1.4 - (activeByRole(ctx, "maintenance-tech") ? 1.8 : 0.3);
-  facility.condition = clamp(round2(facility.condition - decay), 20, 100);
 
   if (activeProducts.length === 1) {
     const p = activeProducts[0];
     const r = productResults.get(p.id)!;
     if (totalUnitsAttempted > 0) {
-      narrativeNotes.push(`Produced ${Math.round(r.goodUnits)} sellable ${p.unitLabel}s (${Math.round(r.scrapUnits)} scrapped to defects) against a planning capacity of ${Math.round(machineCapacity)}.`);
+      narrativeNotes.push(`Produced ${Math.round(r.goodUnits)} sellable ${p.unitLabel}s (${Math.round(r.scrapUnits)} scrapped to defects) against a planning capacity of ${Math.round(totalMachineCapacity)}.`);
     } else {
       narrativeNotes.push(`No production ran this week — insufficient labor allocation or raw materials on hand.`);
     }
@@ -273,12 +317,27 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
       narrativeNotes.push(`Raw materials covered only ${Math.round(materialsAvailableRatio * 100)}% of planned production across all product lines this week.`);
     }
   }
+  if (company.facilities.length > 1) {
+    narrativeNotes.push(
+      `Facility utilization — ${facilityUtilizations.map((f) => `${f.name}: ${Math.round(f.utilization * 100)}%`).join("; ")}.`,
+    );
+  }
 
   // ---- 4. Sales & demand, per active (or sell-off) product ----
+  const salesManager = managerForDepartment(ctx, "sales");
   const salesRep = activeByRole(ctx, "sales-rep");
-  const salesEffectiveness = salesRep
-    ? clamp(perfByEmployeeId[salesRep.id].outputFactor, 0.5, 1.4)
-    : clamp(0.55 + company.founderAllocation.sales * 0.9, 0.4, 1.3);
+  const salesReports = salesManager ? activeEmployees.filter((e) => e.managerId === salesManager.id) : [];
+  let salesEffectiveness: number;
+  if (salesManager && salesReports.length > 0) {
+    const avgRepOutput = salesReports.reduce((s, r) => s + perfByEmployeeId[r.id].outputFactor, 0) / salesReports.length;
+    salesEffectiveness = clamp(avgRepOutput * computeManagerBonus(salesManager, perfByEmployeeId), 0.5, 1.5);
+  } else if (salesManager) {
+    salesEffectiveness = clamp(perfByEmployeeId[salesManager.id].outputFactor, 0.5, 1.4);
+  } else if (salesRep) {
+    salesEffectiveness = clamp(perfByEmployeeId[salesRep.id].outputFactor, 0.5, 1.4);
+  } else {
+    salesEffectiveness = clamp((0.55 + company.founderAllocation.sales * 0.9) * founderEffectiveness, 0.3, 1.3);
+  }
   const competitorCapacity = ctx.competitors.reduce((s, c) => s + c.capacityUnits, 0);
 
   let totalRevenue = 0;
@@ -286,7 +345,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     const template = PAPER_PRODUCTS_BY_ID[product.templateId];
     const categoryShare = template?.categoryDemandShare ?? 1 / Math.max(1, sellableProducts.length);
     const relativePrice = product.referenceMarketPrice > 0 ? product.priceWeekly / product.referenceMarketPrice : 1;
-    const productCapacity = machineCapacity * product.capacityAllocationPct;
+    const productCapacity = totalMachineCapacity * product.capacityAllocationPct;
     const companyShareOfCapacity = productCapacity > 0
       ? productCapacity / (productCapacity + competitorCapacity * categoryShare)
       : 0;
@@ -380,12 +439,12 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
 
   // ---- 5. Accounting: AR/AP steady-state collection & payment ----
   const bookkeeper = activeByRole(ctx, "bookkeeper");
-  const controller = activeByRole(ctx, "controller");
+  const controller = managerForDepartment(ctx, "accounting");
   const accountingSkill = controller
     ? perfByEmployeeId[controller.id].coreSkill
     : bookkeeper
       ? perfByEmployeeId[bookkeeper.id].coreSkill
-      : FOUNDER_BASE_SKILL * (0.5 + company.founderAllocation.accounting);
+      : FOUNDER_BASE_SKILL * (0.5 + company.founderAllocation.accounting) * founderEffectiveness;
   const accountingEffectiveness = clamp(accountingSkill / 65, 0.6, 1.3);
 
   const avgCustomerTermsWeeks = company.customers.length
@@ -412,14 +471,16 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   for (const emp of activeEmployees) {
     const perf = perfByEmployeeId[emp.id];
     const errors = Math.round(perf.errorRate * 10);
-    const { highlights, concerns, metrics } = buildRoleNarrative(emp.roleId, perf, {
-      goodUnits: totalGoodUnits,
-      scrapUnits: totalScrapUnits,
-      unitsSold: sellableProducts.reduce((s, p) => s + p.unitsSoldLastWeek, 0),
-      collected,
-      apPaid,
-      orderQty: totalOrderQty,
-    });
+    const { highlights, concerns, metrics } = emp.department === "management"
+      ? buildManagerNarrative(emp, activeEmployees, perfByEmployeeId)
+      : buildRoleNarrative(emp.roleId, perf, {
+          goodUnits: totalGoodUnits,
+          scrapUnits: totalScrapUnits,
+          unitsSold: sellableProducts.reduce((s, p) => s + p.unitsSoldLastWeek, 0),
+          collected,
+          apPaid,
+          orderQty: totalOrderQty,
+        });
     const { morale, fatigue } = updateMoraleAndFatigue(emp, { weekWasHeavy: perf.errorRate > 0.1, recentRaise: emp.lastRaiseWeek === week, recentRecognition: false });
     emp.morale = morale;
     emp.fatigue = fatigue;
@@ -507,12 +568,6 @@ function buildRoleNarrative(
     case "bookkeeper":
       highlights.push(`Processed collections ($${Math.round(ctx.collected).toLocaleString()}) and vendor payments ($${Math.round(ctx.apPaid).toLocaleString()}).`);
       break;
-    case "controller":
-      highlights.push("Oversaw the accounting function and financial reporting this week.");
-      break;
-    case "plant-manager":
-      highlights.push("Supervised the production floor this week.");
-      break;
     default:
       highlights.push("Completed regular duties this week.");
   }
@@ -521,4 +576,45 @@ function buildRoleNarrative(
     concerns.push("A higher-than-usual error rate this week is worth watching.");
   }
   return { highlights, concerns, metrics };
+}
+
+/** Managers get a report built from their actual team's aggregate numbers this week, with a trend line vs. their own last evaluation where available. */
+function buildManagerNarrative(
+  manager: Employee,
+  activeEmployees: Employee[],
+  perfByEmployeeId: Record<string, PerformanceResult>,
+): { highlights: string[]; concerns: string[]; metrics: Record<string, number> } {
+  const highlights: string[] = [];
+  const concerns: string[] = [];
+  const reports = activeEmployees.filter((e) => e.managerId === manager.id);
+  const managesDepartment = PAPER_ROLES_BY_ID[manager.roleId]?.managesDepartment ?? manager.department;
+
+  if (reports.length === 0) {
+    highlights.push(`No direct reports yet — currently the only person in ${managesDepartment}.`);
+    return { highlights, concerns, metrics: { outputFactor: round2(perfByEmployeeId[manager.id]?.outputFactor ?? 1), errorRate: 0, teamSize: 0 } };
+  }
+
+  const avgOutput = reports.reduce((s, r) => s + perfByEmployeeId[r.id].outputFactor, 0) / reports.length;
+  const totalErrors = reports.reduce((s, r) => s + Math.round(perfByEmployeeId[r.id].errorRate * 10), 0);
+  const avgMorale = reports.reduce((s, r) => s + r.morale, 0) / reports.length;
+
+  const priorEval = manager.performanceHistory[manager.performanceHistory.length - 1];
+  const priorAvgOutput = priorEval?.metrics.teamAvgOutput;
+  if (typeof priorAvgOutput === "number" && Math.abs(priorAvgOutput - avgOutput) > 0.04) {
+    const direction = avgOutput > priorAvgOutput ? "up" : "down";
+    highlights.push(
+      `Managing ${reports.length} direct report(s) — average team output moved ${direction} from ${Math.round(priorAvgOutput * 100)}% to ${Math.round(avgOutput * 100)}% of typical over the last evaluation.`,
+    );
+  } else {
+    highlights.push(`Managing ${reports.length} direct report(s), averaging ${Math.round(avgOutput * 100)}% of typical output this week.`);
+  }
+  highlights.push(`Team flagged ${totalErrors} error(s) this week; average team morale is ${Math.round(avgMorale)}/100.`);
+  if (avgMorale < 45) concerns.push("Team morale is low enough to be a retention risk.");
+  if (totalErrors > reports.length * 2) concerns.push("Error count is high relative to team size — may need closer supervision or training.");
+
+  return {
+    highlights,
+    concerns,
+    metrics: { outputFactor: round2(perfByEmployeeId[manager.id]?.outputFactor ?? 1), errorRate: 0, teamSize: reports.length, teamAvgOutput: round2(avgOutput) },
+  };
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useGameStore } from "../store/useGameStore";
+import { getIndustryDefinition } from "../industries/registry";
 import { formatMoney } from "../engine/dateUtils";
 import { Badge, Button, Card, CardHeading, ProgressBar, Table, Td, Th } from "../components/ui";
 
@@ -9,10 +10,21 @@ export default function Employees() {
   const game = useGameStore((s) => s.game)!;
   const fireEmployee = useGameStore((s) => s.fireEmployee);
   const giveRaise = useGameStore((s) => s.giveRaise);
+  const promoteEmployee = useGameStore((s) => s.promoteEmployee);
+  const reassignManager = useGameStore((s) => s.reassignManager);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const industry = getIndustryDefinition(game.company.industryId)!;
   const employees = game.company.employees.filter((e) => e.status === "active");
   const selected = employees.find((e) => e.id === selectedId) ?? employees[0] ?? null;
+  const managerName = (id: string | null) => (id ? employees.find((e) => e.id === id)?.name ?? "—" : "Founder");
+  const facilityName = (id: string | null) => (id ? game.company.facilities.find((f) => f.id === id)?.name ?? "—" : "—");
+  const eligibleManagerRole = selected
+    ? industry.employeeRoles.find((r) => r.tier >= 2 && r.managesDepartment === selected.department && r.id !== selected.roleId)
+    : undefined;
+  const possibleManagers = selected
+    ? employees.filter((e) => e.id !== selected.id && e.department === "management")
+    : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,6 +82,31 @@ export default function Employees() {
               </div>
             </div>
 
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-ink-700 p-2.5 text-xs">
+              <div>Reports to: <span className="text-ink-100">{managerName(selected.managerId)}</span></div>
+              {selected.facilityId && <div>Facility: <span className="text-ink-100">{facilityName(selected.facilityId)}</span></div>}
+              {possibleManagers.length > 0 && (
+                <label className="flex items-center gap-1.5">
+                  <span className="text-ink-400">Reassign to:</span>
+                  <select
+                    value={selected.managerId ?? ""}
+                    onChange={(e) => reassignManager(selected.id, e.target.value || null)}
+                    className="rounded-md border border-ink-700 bg-ink-950 px-1.5 py-1 text-xs"
+                  >
+                    <option value="">Founder</option>
+                    {possibleManagers.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.title})</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {eligibleManagerRole && (
+                <Button variant="secondary" onClick={() => promoteEmployee(selected.id, eligibleManagerRole.id)}>
+                  Promote to {eligibleManagerRole.title}
+                </Button>
+              )}
+            </div>
+
             <div className="mb-4 text-xs text-ink-300">
               <div className="font-semibold text-ink-200">{selected.education.degree}, {selected.education.field}</div>
               <div>{selected.education.school}</div>
@@ -99,13 +136,14 @@ export default function Employees() {
         <CardHeading>All-Employee Summary</CardHeading>
         <Table>
           <thead>
-            <tr><Th>Name</Th><Th>Title</Th><Th align="right">Salary/wk</Th><Th align="right">Morale</Th><Th align="right">Errors</Th></tr>
+            <tr><Th>Name</Th><Th>Title</Th><Th>Reports To</Th><Th align="right">Salary/wk</Th><Th align="right">Morale</Th><Th align="right">Errors</Th></tr>
           </thead>
           <tbody>
             {employees.map((e) => (
               <tr key={e.id}>
                 <Td>{e.name}</Td>
                 <Td>{e.title}</Td>
+                <Td className="text-ink-400">{managerName(e.managerId)}</Td>
                 <Td align="right">{formatMoney(e.salaryWeekly)}</Td>
                 <Td align="right">{e.morale}</Td>
                 <Td align="right">{e.cumulativeErrors}</Td>

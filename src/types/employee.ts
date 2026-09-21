@@ -9,6 +9,8 @@ export interface EmployeeRoleTemplate {
   description: string;
   /** What delegating this role frees the founder (or a manager) from doing personally. */
   delegates: string;
+  /** For tier-2+ roles: which operational department this manager oversees (their own `department` is usually "management"). */
+  managesDepartment?: Department;
 }
 
 /**
@@ -64,6 +66,8 @@ export interface Employee {
   hireWeek: number;
   salaryWeekly: number;
   managerId: string | null; // null = reports directly to founder
+  /** Which facility this employee physically works at. Only meaningful for facility-bound roles (production-worker, machine-operator); null for company-wide roles. */
+  facilityId: string | null;
   traits: EmployeeTraits;
   education: EmployeeEducation;
   priorEmployers: PriorEmployer[];

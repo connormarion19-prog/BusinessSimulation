@@ -36,5 +36,6 @@ export function createNewGame(industryId: string, saveName: string, params: NewC
     lastProfitCausal: null,
     lastEvaluations: [],
     recentEventLog: [],
+    lastManagementSnapshot: null,
   };
 }

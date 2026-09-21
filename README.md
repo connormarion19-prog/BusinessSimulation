@@ -55,9 +55,20 @@ Everything runs client-side; saves persist to `localStorage` under multiple name
   - `causal.ts` — price/volume revenue decomposition and a full profit
     driver breakdown (revenue / COGS / opex / interest / tax), surfaced on the
     Debug tab so "why did profit change?" always has a real, traceable answer.
-  - `clock.ts` — the weekly orchestrator: runs the industry's `simulateWeek`,
-    amortizes loans, accrues/pays taxes, steps competitors and the economy,
-    detects stage/milestone changes, and builds the weekly briefing.
+  - `clock.ts` — the weekly orchestrator: computes the management snapshot, runs
+    the industry's `simulateWeek`, amortizes loans, accrues/pays taxes, steps
+    competitors and the economy, detects stage/milestone changes, and builds the
+    weekly briefing.
+  - `management.ts` — organizational hierarchy: management *load* (a weighted
+    function of headcount, facilities, active products, customers, suppliers) vs.
+    management *capacity* (a founder baseline plus each active manager's own
+    skill-scaled contribution) produces a founder-effectiveness multiplier (0.35-1)
+    applied to every founder-driven contribution industries make. Promoting an
+    employee into a manager role reassigns their department's unmanaged reports to
+    them automatically.
+  - `facilities.ts` — opens a new facility at a chosen location, scaling its
+    lease/utilities/purchase value by that location's real rent index and posting
+    a security-deposit entry through the ledger.
 - **`src/industries`** — the industry-module system. `IndustryDefinition` is the
   interface every industry implements (products, roles, facilities, suppliers,
   customer segments, event pool, `createInitialState`, `simulateWeek`).
@@ -79,13 +90,16 @@ Everything runs client-side; saves persist to `localStorage` under multiple name
   scope is honest from day one), locations, financing sources, name pools.
 - **`src/store`** — a Zustand store holding `GameState` and every mutating action
   (advance week, set price, set founder time allocation, post an opening, interview,
-  hire, fire, raise, launch/discontinue a product, add/drop/reallocate a supplier);
-  most of the non-trivial mutation logic lives in testable `src/engine` functions
-  (`products.ts`, `suppliers.ts`) that the store just calls. `saveSlots.ts` handles
-  multi-slot localStorage persistence.
-- **`src/pages`** — Overview, Finance, Operations, **Products**, Employees, Hiring,
-  Customers, **Suppliers** (now with real add/drop/reallocate actions), Competitors,
-  Market, Reports, Company/Ownership, Debug, Settings.
+  hire, fire, raise, launch/discontinue a product, add/drop/reallocate a supplier,
+  promote an employee, reassign a manager, open a facility); nearly all non-trivial
+  mutation logic lives in testable `src/engine` functions (`products.ts`,
+  `suppliers.ts`, `management.ts`, `facilities.ts`) that the store just calls.
+  `saveSlots.ts` handles multi-slot localStorage persistence.
+- **`src/pages`** — Overview, Finance, Operations, Products, **Facilities**,
+  Employees (now with promotion, manager reassignment, and reporting-line display),
+  Hiring (facility assignment for plant roles once there's more than one site),
+  Customers, Suppliers, Competitors, Market, Reports, Company/Ownership, Debug,
+  Settings.
 
 ## What's implemented
 
@@ -124,12 +138,44 @@ volume, and its severity scales with that supplier's actual share of purchasing,
 real diversification (spreading allocation, not just adding a name to a list) is
 what limits the damage.
 
+**Management hierarchy & delegation (Employees tab).** Promote an existing
+individual contributor into their department's manager role (Production Worker →
+Plant Manager, Bookkeeper → Controller, Sales Rep → Sales Manager, Purchasing Agent
+→ Purchasing Manager); promotion auto-assigns that department's previously
+unmanaged employees to report to them, and the player can reassign anyone to a
+different manager afterward. A manager's own skill produces a real, direct-report-
+scoped output bonus (not a company-wide blanket buff) — employees who don't report
+to a manager don't get their boost. Delegation actually matters mechanically: the
+`founderEffectiveness` multiplier (visible on the Overview and Facilities tabs)
+degrades as headcount, facilities, active products, customers, and suppliers
+outrun what one founder can personally track, and only recovers by promoting or
+hiring managers — every founder-driven contribution (production labor, purchasing
+negotiation, sales effort, bookkeeping) is scaled by it wherever no delegate exists
+for that function. Managers get their own weekly evaluation built from their
+actual team's aggregate output/error/morale numbers, with a week-over-week trend
+line, not a generic "supervised the floor" line.
+
+**Multi-facility operations (Facilities tab, doubling as basic geographic
+expansion).** Open a second (or third) facility at any of the game's locations;
+its lease, utilities, and purchase value scale by that location's real commercial-
+rent index, so geography has an immediate, ongoing cost consequence. Production
+capacity (machine + labor) aggregates across every facility a company owns, but
+each facility tracks its own equipment condition and decays independently based on
+its own utilization — a new facility with no assigned production staff sits idle
+and doesn't wear down. Production-worker/machine-operator hires are assigned to a
+specific facility at hire time; every other role (sales, purchasing, accounting,
+management, quality, maintenance) serves the whole company regardless of location,
+a deliberate scope simplification noted honestly rather than half-implemented.
+
 **Explicitly out of scope for this pass**: the other 14 industries, international
-expansion, acquisitions/M&A, a management hierarchy above "founder → individual
-contributor" (no manager-of-managers, no delegated authority levels yet),
-multi-facility operations, geographic expansion, and deeper competitor AI (they
-react to the market, not yet to specific player moves like a new product launch).
-These are the natural next phases on top of a validated, tested core engine.
+expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, configurable
+manager authority thresholds (full authority / approval-required / recommendation-
+only — the hierarchy's *reporting and performance* mechanics are real, but spending
+*authority* levels aren't wired up yet), multi-location inventory (raw materials and
+finished goods remain a shared company-wide pool rather than tracked per facility),
+and deeper competitor AI (they react to the market, not yet to specific player moves
+like a new facility or product launch). These are the natural next phases on top of
+a validated, tested core engine.
 
 ## Testing
 
@@ -138,10 +184,16 @@ double-entry posting/rejection of unbalanced entries, trial-balance integrity ac
 mixed transactions, loan amortization to a zero balance, weekly evaluations
 generating from real hired-employee data, a JSON save/load round trip that keeps
 simulating correctly afterward, a **260-week (5 calendar year) simulated run** that
-asserts the accounting identity holds every single week, and a dedicated suite for
-multi-product/multi-supplier operations: capacity/purchasing allocation always
-rebalances to 1 when a line or supplier is added or removed, discontinuing a product
-stops new production while still selling off remaining inventory, and running two
-product lines against three suppliers simultaneously for 20-30 simulated weeks stays
-balanced throughout — matching the design rule that an unbalanced ledger is a bug,
-never a tolerated state.
+asserts the accounting identity holds every single week, a dedicated suite for
+multi-product/multi-supplier operations (capacity/purchasing allocation always
+rebalances to 1, discontinuing a product still sells off remaining inventory, two
+product lines against three suppliers stay balanced for 20-30 weeks), a management-
+hierarchy suite (management load/capacity/founder-effectiveness are pure,
+deterministic functions of company state; promoting a manager measurably improves
+founder effectiveness and correctly reassigns unmanaged reports; promotion is
+rejected into the wrong department), and a multi-facility suite (a new facility's
+costs really do scale by location, capacity aggregates correctly across facilities,
+each facility wears down independently based on its own utilization, and running
+two facilities with assigned staff for 25 weeks stays balanced throughout) —
+matching the design rule that an unbalanced ledger is a bug, never a tolerated
+state.

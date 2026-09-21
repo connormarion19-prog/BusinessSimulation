@@ -9,6 +9,8 @@ import { generateApplicantPool, answerInterviewQuestion as answerInterviewQuesti
 import { makeEntry, dr, cr } from "../engine/ledger";
 import { addProductToCompany, discontinueProductOnCompany } from "../engine/products";
 import { addSupplierToCompany, removeSupplierFromCompany } from "../engine/suppliers";
+import { openFacilityForCompany } from "../engine/facilities";
+import { promoteEmployeeToManager } from "../engine/management";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
 function clone<T>(value: T): T {
@@ -36,10 +38,13 @@ interface GameStoreState {
   postJobOpening: (roleId: string, salaryMin: number, salaryMax: number) => void;
   askInterviewQuestion: (openingId: string, candidateId: string, questionId: string) => void;
   runReferenceCheck: (openingId: string, candidateId: string) => void;
-  hireCandidate: (openingId: string, candidateId: string, salaryWeekly: number) => void;
+  hireCandidate: (openingId: string, candidateId: string, salaryWeekly: number, facilityId?: string) => void;
   closeOpening: (openingId: string) => void;
   fireEmployee: (employeeId: string) => void;
   giveRaise: (employeeId: string, newSalaryWeekly: number) => void;
+  promoteEmployee: (employeeId: string, managerRoleId: string) => void;
+  reassignManager: (employeeId: string, managerId: string | null) => void;
+  openFacility: (facilityTemplateId: string, locationId: string) => void;
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
@@ -207,13 +212,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ game: next });
   },
 
-  hireCandidate: (openingId, candidateId, salaryWeekly) => {
+  hireCandidate: (openingId, candidateId, salaryWeekly, facilityId) => {
     const { game } = get();
     if (!game) return;
     const next = clone(game);
     const opening = next.company.openPositions.find((o) => o.id === openingId);
     const candidate = opening?.candidates.find((c) => c.id === candidateId);
     if (!opening || !candidate) return;
+
+    const facilityBound = opening.roleId === "production-worker" || opening.roleId === "machine-operator";
 
     const employee: Employee = {
       id: `emp-${next.week}-${Math.round(Math.random() * 1e6)}`,
@@ -226,6 +233,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       hireWeek: next.week,
       salaryWeekly,
       managerId: null,
+      facilityId: facilityBound ? (facilityId ?? next.company.facilities[0]?.id ?? null) : null,
       traits: candidate.traits,
       education: candidate.education,
       priorEmployers: candidate.priorEmployers,
@@ -238,6 +246,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       lastRaiseWeek: null,
       onPip: false,
     };
+
+    // An existing manager over this department automatically picks up the new hire as a direct report.
+    if (opening.department !== "management") {
+      const manager = next.company.employees.find(
+        (e) =>
+          e.status === "active" &&
+          e.department === "management" &&
+          getIndustryDefinition(next.company.industryId)?.employeeRoles.find((r) => r.id === e.roleId)?.managesDepartment === opening.department,
+      );
+      if (manager) employee.managerId = manager.id;
+    }
+
     next.company.employees.push(employee);
     opening.status = "filled";
     opening.filledByEmployeeId = employee.id;
@@ -283,6 +303,40 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (!employee) return;
     employee.salaryWeekly = Math.max(0, newSalaryWeekly);
     employee.lastRaiseWeek = next.week;
+    set({ game: next });
+  },
+
+  promoteEmployee: (employeeId, managerRoleId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const industry = getIndustryDefinition(next.company.industryId);
+    const managerRole = industry?.employeeRoles.find((r) => r.id === managerRoleId);
+    if (!industry || !managerRole) return;
+    if (!promoteEmployeeToManager(next.company, employeeId, managerRole, next.week, next.currentDate)) return;
+    set({ game: next });
+  },
+
+  reassignManager: (employeeId, managerId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const employee = next.company.employees.find((e) => e.id === employeeId);
+    if (!employee) return;
+    if (managerId && !next.company.employees.some((e) => e.id === managerId && e.status === "active" && e.department === "management")) return;
+    employee.managerId = managerId;
+    set({ game: next });
+  },
+
+  openFacility: (facilityTemplateId, locationId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const industry = getIndustryDefinition(next.company.industryId);
+    if (!industry) return;
+    const result = openFacilityForCompany(next.company, industry, facilityTemplateId, locationId, next.week, next.currentDate);
+    if (!result.ok) return;
+    next.company.entries.push(...result.entries);
     set({ game: next });
   },
 }));

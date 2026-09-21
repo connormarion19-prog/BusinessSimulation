@@ -10,6 +10,7 @@ import { simulateCompetitorsWeek } from "./competitors";
 import { advanceEconomy } from "./economy";
 import { weekDate } from "./dateUtils";
 import { getCash } from "./company";
+import { computeManagementSnapshot } from "./management";
 import { LOCATIONS_BY_ID } from "../data/locations";
 
 function determineStage(employeeCount: number): GameState["company"]["stage"] {
@@ -31,6 +32,9 @@ export function advanceWeek(state: GameState): GameState {
   const industry = getIndustryDefinition(state.company.industryId);
   if (!industry) throw new Error(`Unknown industry: ${state.company.industryId}`);
 
+  const managementSnapshot = computeManagementSnapshot(state.company, newWeek);
+  state.lastManagementSnapshot = managementSnapshot;
+
   const ctx: IndustrySimContext = {
     company: state.company,
     market: state.market,
@@ -40,6 +44,7 @@ export function advanceWeek(state: GameState): GameState {
     week: newWeek,
     date,
     difficulty: state.meta.difficulty,
+    founderEffectiveness: managementSnapshot.founderEffectiveness,
     eventFlags: {},
   };
 
@@ -181,6 +186,16 @@ export function advanceWeek(state: GameState): GameState {
       title: "Turning away demand",
       detail: `You're leaving roughly ${Math.round(activeProduct.unitsUnfulfilledLastWeek)} ${activeProduct.unitLabel}s of demand on the table each week. Consider capacity, staffing, or inventory buffer.`,
       severity: "opportunity",
+    });
+  }
+  if (managementSnapshot.founderEffectiveness < 0.85) {
+    decisions.push({
+      id: "dec-management-overload",
+      kind: "management-overload",
+      week: newWeek,
+      title: "You're stretched thin",
+      detail: `The company now needs more day-to-day management than you can personally provide — your own effectiveness this week was cut to ${Math.round(managementSnapshot.founderEffectiveness * 100)}%. Promoting or hiring a manager would help.`,
+      severity: managementSnapshot.founderEffectiveness < 0.6 ? "urgent" : "warning",
     });
   }
   const weeklyBurnEstimate = finalIncomeStatement.totalOperatingExpenses + finalIncomeStatement.cogs;

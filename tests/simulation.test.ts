@@ -78,6 +78,7 @@ describe("full simulation integrity", () => {
       hireWeek: game.week,
       salaryWeekly: candidate.askingSalaryWeekly,
       managerId: null,
+      facilityId: game.company.facilities[0].id,
       traits: candidate.traits,
       education: candidate.education,
       priorEmployers: candidate.priorEmployers,

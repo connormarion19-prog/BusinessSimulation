@@ -17,11 +17,13 @@ export default function Hiring() {
   const [roleId, setRoleId] = useState(industry.employeeRoles[0].id);
   const [openOpeningId, setOpenOpeningId] = useState<string | null>(null);
   const [openCandidateId, setOpenCandidateId] = useState<string | null>(null);
+  const [facilityId, setFacilityId] = useState(game.company.facilities[0]?.id ?? "");
 
   const role = industry.employeeRoles.find((r) => r.id === roleId)!;
   const openPositions = game.company.openPositions.filter((o) => o.status === "open");
   const opening = openPositions.find((o) => o.id === openOpeningId) ?? openPositions[0] ?? null;
   const candidate = opening?.candidates.find((c) => c.id === openCandidateId) ?? opening?.candidates[0] ?? null;
+  const openingNeedsFacility = opening && (opening.roleId === "production-worker" || opening.roleId === "machine-operator") && game.company.facilities.length > 1;
 
   return (
     <div className="flex flex-col gap-6">
@@ -112,7 +114,18 @@ export default function Hiring() {
                 {candidate.referenceCheckNote && <p className="mt-2 text-sm text-ink-300">{candidate.referenceCheckNote}</p>}
               </div>
 
-              <Button onClick={() => hireCandidate(opening.id, candidate.id, candidate.askingSalaryWeekly)}>
+              {openingNeedsFacility && (
+                <label className="mb-3 block text-sm">
+                  Assign to facility
+                  <select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} className="mt-1 block rounded-md border border-ink-700 bg-ink-950 px-2 py-1.5 text-sm">
+                    {game.company.facilities.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <Button onClick={() => hireCandidate(opening.id, candidate.id, candidate.askingSalaryWeekly, facilityId || undefined)}>
                 Offer &amp; Hire at {formatMoney(candidate.askingSalaryWeekly)}/wk
               </Button>
             </Card>

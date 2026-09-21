@@ -34,11 +34,18 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <StatCard label="Cash" value={formatMoney(cash)} tone={cash < 0 ? "bad" : "neutral"} />
         <StatCard label="Weekly Revenue" value={formatMoney(latest?.revenue ?? 0)} />
         <StatCard label="Weekly Net Income" value={formatMoney(latest?.netIncome ?? 0)} tone={(latest?.netIncome ?? 0) >= 0 ? "good" : "bad"} />
         <StatCard label="Employees" value={String(latest?.employeeCount ?? 0)} />
+        {game.lastManagementSnapshot && (
+          <StatCard
+            label="Founder Effectiveness"
+            value={`${Math.round(game.lastManagementSnapshot.founderEffectiveness * 100)}%`}
+            tone={game.lastManagementSnapshot.founderEffectiveness > 0.85 ? "good" : game.lastManagementSnapshot.founderEffectiveness > 0.6 ? "neutral" : "bad"}
+          />
+        )}
       </div>
 
       {game.pendingDecisions.length > 0 && (

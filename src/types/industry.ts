@@ -95,6 +95,8 @@ export interface IndustrySimContext {
   week: number;
   date: string;
   difficulty: Difficulty;
+  /** 0-1 multiplier on every founder-driven (undelegated) contribution this week, degraded by organizational complexity outrunning management capacity. */
+  founderEffectiveness: number;
   /** Scratch space events use to signal same-week effects to production/sales logic. */
   eventFlags: Record<string, number>;
 }

@@ -116,6 +116,14 @@ export interface CausalBreakdown {
   drivers: CausalDriver[];
 }
 
+export interface ManagementSnapshot {
+  week: number;
+  managementLoad: number;
+  managementCapacity: number;
+  founderEffectiveness: number; // 0-1, multiplies every founder-driven contribution this week
+  managerCount: number;
+}
+
 export type DecisionKind =
   | "review-candidate"
   | "review-evaluation"
@@ -125,7 +133,8 @@ export type DecisionKind =
   | "price-stale"
   | "capacity-constrained"
   | "cash-warning"
-  | "facility-maintenance";
+  | "facility-maintenance"
+  | "management-overload";
 
 export interface PendingDecision {
   id: string;
@@ -204,4 +213,5 @@ export interface GameState {
   lastProfitCausal: CausalBreakdown | null;
   lastEvaluations: import("./employee").WeeklyEvaluation[];
   recentEventLog: string[];
+  lastManagementSnapshot: ManagementSnapshot | null;
 }
