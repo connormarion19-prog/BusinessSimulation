@@ -11,6 +11,7 @@ export const PAPER_SUPPLIERS: SupplierTemplate[] = [
     reliability: 0.9,
     paymentTermsDays: 30,
     leadTimeWeeks: 1,
+    minimumOrderUnits: 20,
   },
   {
     id: "discount-pulp-broker",
@@ -22,6 +23,7 @@ export const PAPER_SUPPLIERS: SupplierTemplate[] = [
     reliability: 0.68,
     paymentTermsDays: 15,
     leadTimeWeeks: 2,
+    minimumOrderUnits: 40,
   },
   {
     id: "premium-northern-pulp",
@@ -33,6 +35,19 @@ export const PAPER_SUPPLIERS: SupplierTemplate[] = [
     reliability: 0.95,
     paymentTermsDays: 45,
     leadTimeWeeks: 1,
+    minimumOrderUnits: 15,
+  },
+  {
+    id: "lakeside-fiber-supply",
+    name: "Lakeside Fiber Supply",
+    inputId: "wood-pulp",
+    location: "Regional",
+    pricePerUnit: 171,
+    quality: 0.72,
+    reliability: 0.8,
+    paymentTermsDays: 21,
+    leadTimeWeeks: 1,
+    minimumOrderUnits: 10,
   },
 ];
 

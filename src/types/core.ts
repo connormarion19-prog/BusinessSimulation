@@ -81,11 +81,30 @@ export interface CustomerAccount {
   paymentTermsDays: number;
   relationshipStrength: number; // 0-100, affects retention & negotiation
   contractedSince: number; // week
+  contractLengthWeeks: number;
+  contractEndWeek: number;
   lastOrderWeek: number | null;
   atRisk: boolean;
+  /** 0-100, how consistently this customer pays on or before the due date — differs per account, drives real payment-behavior variance in the invoice ledger. */
+  paymentReliability: number;
+  /** Order/delivery/quality history counters used for retention and churn narratives — never resets. */
+  ordersFulfilled: number;
+  ordersMissed: number;
+  complaints: number;
 }
 
-export type ProspectStatus = "new" | "researched" | "contacted" | "won" | "lost";
+export type ProspectStatus =
+  | "new"
+  | "researched"
+  | "contacted"
+  | "interested"
+  | "qualified"
+  | "negotiation"
+  | "won"
+  | "lost";
+
+/** How the player chooses to pursue a prospect at the "contact" step — cost and effectiveness genuinely differ. */
+export type OutreachMethod = "cold-outreach" | "email" | "phone-call" | "in-person-meeting";
 
 /** What the player actually sees before pursuing a prospect — always a range/estimate, never the hidden ground truth. */
 export interface ProspectEstimate {
@@ -107,6 +126,10 @@ export interface Prospect {
   locationId: string;
   industryNote: string;
   segment: string;
+  /** Whether this prospect already buys from a competitor — makes them harder to win but real, not cosmetic (raises effective price sensitivity/switching friction). */
+  hasCurrentSupplier: boolean;
+  /** How often this account would typically place an order, purely descriptive (annualVolumeUnits / this = a typical order size). */
+  buyingFrequencyWeeks: number;
   estimate: ProspectEstimate;
   trueAnnualVolumeUnits: number;
   trueWillingnessToPayPerUnit: number;
@@ -118,6 +141,7 @@ export interface Prospect {
   discoveredWeek: number;
   lastContactWeek: number | null;
   contactAttempts: number;
+  outreachHistory: { week: number; method: OutreachMethod; outcome: "advanced" | "no-response" }[];
   lostReason?: string;
   wonCustomerId?: string;
 }
@@ -130,11 +154,20 @@ export interface CustomerPitch {
   contractLengthWeeks: number;
 }
 
+/** A supplier-style counter: what the prospect would actually accept, computed from their hidden truth — shown only after a negotiable near-miss pitch, never handed out for free. */
+export interface CustomerCounterOffer {
+  priceAcceptable: number;
+  volumeAcceptable: number;
+  paymentTermsAcceptable: number;
+}
+
 export interface PitchResult {
   ok: boolean;
   won: boolean;
   reason: string;
   entries: JournalEntry[];
+  /** Present when the pitch was close enough to be negotiable — the player can accept these terms outright via acceptCounterOffer instead of re-pitching blind. */
+  counterOffer?: CustomerCounterOffer;
 }
 
 export interface SupplierRelationship {
@@ -151,6 +184,93 @@ export interface SupplierRelationship {
   purchaseAllocationPct: number;
   /** Derived/display convenience: the supplier with the largest allocation. Not used in purchasing logic. */
   isPrimary: boolean;
+  /** Minimum order size (input units) this supplier will accept — a real negotiation lever, not cosmetic. */
+  minimumOrderUnits: number;
+  /** How many times terms have been successfully renegotiated — repeated asks get harder to move further. */
+  negotiationRounds: number;
+  lastNegotiationWeek: number | null;
+}
+
+/** What the supplier would actually accept, computed from their hidden capacity/relationship state — shown only on a near-miss ask. */
+export interface SupplierCounterOffer {
+  priceAcceptable: number;
+  paymentTermsAcceptable: number;
+  minimumOrderAcceptable: number;
+}
+
+export interface SupplierNegotiationOffer {
+  targetPricePerUnit: number;
+  volumeCommitmentUnits: number;
+  paymentTermsDaysRequested: number;
+}
+
+export interface SupplierNegotiationResult {
+  ok: boolean;
+  accepted: boolean;
+  reason: string;
+  counterOffer?: SupplierCounterOffer;
+}
+
+export type SalesOrderStatus = "quote" | "accepted" | "in-production" | "shipped" | "delivered" | "cancelled";
+
+/** A real, discrete order — distinct from the recurring weekly demand a contract generates. Created whenever a contracted customer actually takes fulfilled volume in a week. */
+export interface SalesOrder {
+  id: string;
+  customerId: string;
+  customerName: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  week: number;
+  date: string;
+  status: SalesOrderStatus;
+  invoiceId?: string;
+}
+
+export type InvoiceStatus = "outstanding" | "partially-paid" | "paid" | "overdue";
+
+export interface Invoice {
+  id: string;
+  orderId: string;
+  customerId: string;
+  customerName: string;
+  amount: number;
+  amountPaid: number;
+  issuedWeek: number;
+  issuedDate: string;
+  dueWeek: number;
+  status: InvoiceStatus;
+  paidWeek?: number;
+}
+
+export type PurchaseOrderStatus = "sent" | "received" | "cancelled";
+
+export interface PurchaseOrder {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  quantity: number;
+  unitPrice: number;
+  week: number;
+  date: string;
+  status: PurchaseOrderStatus;
+  billId?: string;
+}
+
+export type BillStatus = "outstanding" | "partially-paid" | "paid" | "overdue";
+
+export interface Bill {
+  id: string;
+  purchaseOrderId: string;
+  supplierId: string;
+  supplierName: string;
+  amount: number;
+  amountPaid: number;
+  issuedWeek: number;
+  issuedDate: string;
+  dueWeek: number;
+  status: BillStatus;
+  paidWeek?: number;
 }
 
 export interface WeeklyKpiSnapshot {
@@ -299,7 +419,10 @@ export type DecisionKind =
   | "no-suppliers"
   | "no-customers"
   | "prospects-waiting"
-  | "losing-money";
+  | "losing-money"
+  | "invoice-overdue"
+  | "bill-overdue"
+  | "prospect-negotiating";
 
 export interface PendingDecision {
   id: string;
@@ -344,6 +467,12 @@ export interface Company {
   enteredMarkets: MarketEntry[];
   inTransitShipments: InTransitShipment[];
   prospects: Prospect[];
+  salesOrders: SalesOrder[];
+  invoices: Invoice[];
+  purchaseOrders: PurchaseOrder[];
+  bills: Bill[];
+  /** 0-100, built from real fulfillment/relationship/contract history — not a stat the player sets directly. Nudges pitch conversion, negotiation leverage, and candidate quality. */
+  reputation: number;
 }
 
 export interface EconomyState {

@@ -76,6 +76,7 @@ export interface SupplierTemplate {
   reliability: number;
   paymentTermsDays: number;
   leadTimeWeeks: number;
+  minimumOrderUnits: number;
 }
 
 export interface CustomerSegmentTemplate {

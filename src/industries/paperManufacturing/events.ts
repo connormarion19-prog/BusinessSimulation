@@ -141,8 +141,14 @@ export const PAPER_EVENTS: IndustryEventDefinition[] = [
         paymentTermsDays: segment.paymentTermsDays,
         relationshipStrength: 55,
         contractedSince: ctx.week,
+        contractLengthWeeks: 52,
+        contractEndWeek: ctx.week + 52,
         lastOrderWeek: null,
         atRisk: false,
+        paymentReliability: 75,
+        ordersFulfilled: 0,
+        ordersMissed: 0,
+        complaints: 0,
       });
       const narrative = `${name}, a ${segment.name.toLowerCase()}, reached out looking for a new supplier of ${targetProduct.name.toLowerCase()} and signed on — roughly ${annualVolume.toLocaleString()} units/year of potential volume if you can consistently deliver.`;
       return {

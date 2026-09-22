@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestGame } from "./testHelpers";
+import { createTestGame, makeTestCustomer } from "./testHelpers";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance } from "../src/engine/ledger";
 import { getIndustryDefinition } from "../src/industries/registry";
@@ -66,11 +66,10 @@ describe("company workload model", () => {
       game.company.employees.push(makeEmployee(`e${i}`, "production-worker", "production", { accounting: 0, purchasing: 0, sales: 0, operations: 100, administration: 0 }));
     }
     for (let i = 0; i < 6; i++) {
-      game.company.customers.push({
-        id: `cust-${i}`, name: `Customer ${i}`, productId: game.company.products[0].id, segment: "regional-distributors",
-        location: "Regional", locationId: game.company.locationId, annualVolumeUnits: 2000, priceSensitivity: 0.5,
-        qualityExpectation: 0.5, paymentTermsDays: 30, relationshipStrength: 60, contractedSince: 0, lastOrderWeek: null, atRisk: false,
-      });
+      game.company.customers.push(makeTestCustomer({
+        id: `cust-${i}`, name: `Customer ${i}`, productId: game.company.products[0].id,
+        locationId: game.company.locationId,
+      }));
     }
 
     const grownWorkload = computeCompanyWorkload(game.company);

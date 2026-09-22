@@ -106,6 +106,11 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
     enteredMarkets: [],
     inTransitShipments: [],
     prospects: [],
+    salesOrders: [],
+    invoices: [],
+    purchaseOrders: [],
+    bills: [],
+    reputation: 50,
   };
   company.prospects = generateInitialProspectPool(PAPER_CUSTOMER_SEGMENTS, params.locationId, params.foundedWeek, rng, 8);
 

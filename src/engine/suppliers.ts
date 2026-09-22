@@ -31,6 +31,9 @@ export function addSupplierToCompany(
     leadTimeWeeks: template.leadTimeWeeks,
     purchaseAllocationPct: newShare,
     isPrimary: isFirstSupplier,
+    minimumOrderUnits: template.minimumOrderUnits,
+    negotiationRounds: 0,
+    lastNegotiationWeek: null,
   });
   company.historyLog.push({
     week,

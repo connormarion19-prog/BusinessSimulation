@@ -3,7 +3,16 @@ import { useGameStore } from "../store/useGameStore";
 import type { Prospect } from "../types/core";
 import { Badge, Button, Card, CardHeading, ProgressBar, Table, Td, Th } from "../components/ui";
 
-const STATUS_TONE = { new: "neutral", researched: "info", contacted: "warn", won: "good", lost: "bad" } as const;
+const STATUS_TONE = {
+  new: "neutral",
+  researched: "info",
+  contacted: "warn",
+  interested: "info",
+  qualified: "warn",
+  negotiation: "warn",
+  won: "good",
+  lost: "bad",
+} as const;
 
 function PitchForm({ prospect }: { prospect: Prospect }) {
   const game = useGameStore((s) => s.game)!;

@@ -14,9 +14,15 @@ import { promoteEmployeeToManager } from "../engine/management";
 import { approveManagerDecision as approveManagerDecisionEngine, rejectManagerDecision as rejectManagerDecisionEngine } from "../engine/delegation";
 import { enterMarket as enterMarketEngine, exitMarket as exitMarketEngine, type EnterMarketParams } from "../engine/expansion";
 import { transferInventory as transferInventoryEngine } from "../engine/logistics";
-import { researchProspect as researchProspectEngine, pitchProspect as pitchProspectEngine } from "../engine/prospecting";
+import {
+  researchProspect as researchProspectEngine,
+  contactProspect as contactProspectEngine,
+  qualifyProspect as qualifyProspectEngine,
+  pitchProspect as pitchProspectEngine,
+  acceptProspectCounterOffer as acceptProspectCounterOfferEngine,
+} from "../engine/prospecting";
 import { computeStaffingGaps } from "../engine/workload";
-import type { CustomerPitch } from "../types/core";
+import type { CustomerCounterOffer, CustomerPitch, OutreachMethod } from "../types/core";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
 function clone<T>(value: T): T {
@@ -59,7 +65,10 @@ interface GameStoreState {
   exitMarket: (entryId: string) => void;
   transferInventory: (productId: string, fromFacilityId: string, toFacilityId: string, quantity: number) => { ok: boolean; reason?: string };
   researchProspect: (prospectId: string) => { ok: boolean; reason?: string };
-  pitchProspect: (prospectId: string, pitch: CustomerPitch) => { ok: boolean; won?: boolean; reason?: string };
+  contactProspect: (prospectId: string, method: OutreachMethod) => { ok: boolean; advanced?: boolean; reason?: string };
+  qualifyProspect: (prospectId: string) => { ok: boolean; qualified?: boolean; reason?: string };
+  pitchProspect: (prospectId: string, pitch: CustomerPitch) => { ok: boolean; won?: boolean; reason?: string; counterOffer?: CustomerCounterOffer };
+  acceptProspectCounterOffer: (prospectId: string, productId: string) => { ok: boolean; won?: boolean; reason?: string };
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
@@ -439,22 +448,63 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return { ok: true };
   },
 
+  contactProspect: (prospectId, method) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const salesSkillFactor = salesSkillFactorFor(next);
+    const result = contactProspectEngine(next.company, prospectId, method, salesSkillFactor, next.week, next.currentDate, next.rng);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    next.company.entries.push(...result.entries);
+    set({ game: next });
+    return { ok: true, advanced: result.advanced, reason: result.reason };
+  },
+
+  qualifyProspect: (prospectId) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const result = qualifyProspectEngine(next.company, prospectId, next.rng);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    set({ game: next });
+    return { ok: true, qualified: result.qualified, reason: result.reason };
+  },
+
   pitchProspect: (prospectId, pitch) => {
     const { game } = get();
     if (!game) return { ok: false, reason: "No active game." };
     const next = clone(game);
-    const industry = getIndustryDefinition(next.company.industryId);
-    if (!industry) return { ok: false, reason: "Unknown industry." };
-    const salesGap = computeStaffingGaps(next.company, industry.employeeRoles).sales;
-    const salesSkillFactor = Math.max(0.4, Math.min(1.6, salesGap.efficiency));
-    const hasQualityInvestment = next.company.employees.some(
-      (e) => e.status === "active" && (e.roleId === "quality-inspector" || e.roleId === "plant-manager"),
-    );
-    const productQualityFactor = hasQualityInvestment ? 1.0 : 0.82;
+    const salesSkillFactor = salesSkillFactorFor(next);
+    const productQualityFactor = productQualityFactorFor(next);
     const result = pitchProspectEngine(next.company, prospectId, pitch, salesSkillFactor, productQualityFactor, next.week, next.currentDate, next.rng);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    next.company.entries.push(...result.entries);
+    set({ game: next });
+    return { ok: true, won: result.won, reason: result.reason, counterOffer: result.counterOffer };
+  },
+
+  acceptProspectCounterOffer: (prospectId, productId) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const result = acceptProspectCounterOfferEngine(next.company, prospectId, productId, next.week, next.currentDate);
     if (!result.ok) return { ok: false, reason: result.reason };
     next.company.entries.push(...result.entries);
     set({ game: next });
     return { ok: true, won: result.won, reason: result.reason };
   },
 }));
+
+function salesSkillFactorFor(game: GameState): number {
+  const industry = getIndustryDefinition(game.company.industryId);
+  if (!industry) return 0.7;
+  const salesGap = computeStaffingGaps(game.company, industry.employeeRoles).sales;
+  return Math.max(0.4, Math.min(1.6, salesGap.efficiency));
+}
+
+function productQualityFactorFor(game: GameState): number {
+  const hasQualityInvestment = game.company.employees.some(
+    (e) => e.status === "active" && (e.roleId === "quality-inspector" || e.roleId === "plant-manager"),
+  );
+  return hasQualityInvestment ? 1.0 : 0.82;
+}

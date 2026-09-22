@@ -1,7 +1,7 @@
 import { createNewGame } from "../src/engine/newGame";
 import { addSupplierToCompany } from "../src/engine/suppliers";
 import { getIndustryDefinition } from "../src/industries/registry";
-import type { GameState } from "../src/types/core";
+import type { CustomerAccount, GameState } from "../src/types/core";
 import type { NewCompanyParams } from "../src/types/industry";
 
 /**
@@ -18,4 +18,29 @@ export function createTestGame(industryId: string, saveName: string, params: New
   const industry = getIndustryDefinition(industryId)!;
   addSupplierToCompany(game.company, industry, supplierTemplateId, game.week, game.currentDate);
   return game;
+}
+
+/** Builds a fully-formed CustomerAccount for tests that don't care about the Phase 5 contract/payment-history
+ * fields specifically — just override whatever the test does care about. */
+export function makeTestCustomer(overrides: Partial<CustomerAccount> & Pick<CustomerAccount, "id" | "name" | "productId">): CustomerAccount {
+  return {
+    segment: "regional-distributors",
+    location: "Regional",
+    locationId: "wi-greenbay",
+    annualVolumeUnits: 2000,
+    priceSensitivity: 0.5,
+    qualityExpectation: 0.5,
+    paymentTermsDays: 30,
+    relationshipStrength: 60,
+    contractedSince: 0,
+    contractLengthWeeks: 52,
+    contractEndWeek: 52,
+    lastOrderWeek: null,
+    atRisk: false,
+    paymentReliability: 80,
+    ordersFulfilled: 0,
+    ordersMissed: 0,
+    complaints: 0,
+    ...overrides,
+  };
 }

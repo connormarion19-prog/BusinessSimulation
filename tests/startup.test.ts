@@ -10,7 +10,13 @@ import { incomeStatementForRange } from "../src/engine/reports";
 import { getIndustryDefinition } from "../src/industries/registry";
 import { createRng } from "../src/engine/rng";
 import type { NewCompanyParams } from "../src/types/industry";
-import type { CustomerPitch } from "../src/types/core";
+import type { CustomerPitch, Prospect } from "../src/types/core";
+
+/** TS narrows `prospect.status` to its last-assigned literal and doesn't widen it back across a call to
+ * an external function that mutates it — reading through this helper avoids spurious TS2367 errors. */
+function statusOf(p: Prospect): string {
+  return p.status;
+}
 
 function baseParams(overrides: Partial<NewCompanyParams> = {}): NewCompanyParams {
   return {
@@ -101,6 +107,7 @@ describe("customer prospecting", () => {
       const rng = createRng(1000 + i);
       const game = createNewGame("paper-manufacturing", "Test", baseParams());
       const prospect = game.company.prospects[0];
+      prospect.status = "qualified";
       const goodPitch: CustomerPitch = {
         productId: game.company.products[0].id,
         priceOffered: prospect.trueWillingnessToPayPerUnit * 0.85,
@@ -115,6 +122,7 @@ describe("customer prospecting", () => {
       const rng = createRng(2000 + i);
       const game = createNewGame("paper-manufacturing", "Test", baseParams());
       const prospect = game.company.prospects[0];
+      prospect.status = "qualified";
       const badPitch: CustomerPitch = {
         productId: game.company.products[0].id,
         priceOffered: prospect.trueWillingnessToPayPerUnit * 2.2,
@@ -134,6 +142,7 @@ describe("customer prospecting", () => {
     const rng = createRng(42);
     const game = createNewGame("paper-manufacturing", "Test", baseParams());
     const prospect = game.company.prospects[0];
+    prospect.status = "qualified";
     const pitch: CustomerPitch = {
       productId: game.company.products[0].id,
       priceOffered: prospect.trueWillingnessToPayPerUnit * 0.8,
@@ -144,9 +153,10 @@ describe("customer prospecting", () => {
     let result;
     let attempts = 0;
     do {
+      if (statusOf(prospect) === "negotiation") prospect.status = "qualified";
       result = pitchProspect(game.company, prospect.id, pitch, 1.5, 1.0, game.week, game.currentDate, rng);
       attempts++;
-    } while (!result.won && attempts < 5 && prospect.status !== "lost");
+    } while (!result.won && attempts < 5 && statusOf(prospect) !== "lost");
     game.company.entries.push(...result.entries);
     const tb = trialBalance(game.company.entries, game.week);
     expect(tb.balanced).toBe(true);
@@ -228,6 +238,7 @@ describe("full build-from-scratch integration", () => {
     expect(addSupplierToCompany(game.company, industry, "regional-pulp-co", game.week, game.currentDate)).toBe(true);
 
     const prospect = game.company.prospects[0];
+    prospect.status = "qualified";
     const pitch: CustomerPitch = {
       productId: game.company.products[0].id,
       priceOffered: prospect.trueWillingnessToPayPerUnit * 0.82,
@@ -238,9 +249,10 @@ describe("full build-from-scratch integration", () => {
     let pitchResult;
     let attempts = 0;
     do {
+      if (statusOf(prospect) === "negotiation") prospect.status = "qualified";
       pitchResult = pitchProspect(game.company, prospect.id, pitch, 1.4, 1.0, game.week, game.currentDate, rng);
       attempts++;
-    } while (!pitchResult.won && attempts < 6 && prospect.status !== "lost");
+    } while (!pitchResult.won && attempts < 6 && statusOf(prospect) !== "lost");
     game.company.entries.push(...pitchResult.entries);
 
     for (let i = 0; i < 25; i++) {

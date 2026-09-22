@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestGame } from "./testHelpers";
+import { createTestGame, makeTestCustomer } from "./testHelpers";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance, accountBalance } from "../src/engine/ledger";
 import { balanceSheetAsOf } from "../src/engine/reports";
@@ -129,7 +129,7 @@ describe("geographic market entry", () => {
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const productId = game.company.products[0].id;
 
-    const regionalCustomer: CustomerAccount = {
+    const regionalCustomer: CustomerAccount = makeTestCustomer({
       id: "regional-cust-1",
       name: "Ohio Print Partners",
       productId,
@@ -137,14 +137,9 @@ describe("geographic market entry", () => {
       location: "Ohio",
       locationId: "oh-columbus",
       annualVolumeUnits: 8000,
-      priceSensitivity: 0.5,
       qualityExpectation: 0.6,
-      paymentTermsDays: 30,
-      relationshipStrength: 60,
       contractedSince: game.week,
-      lastOrderWeek: null,
-      atRisk: false,
-    };
+    });
     game.company.customers.push(regionalCustomer);
 
     for (let i = 0; i < 3; i++) {
