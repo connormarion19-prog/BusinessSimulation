@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import clsx from "clsx";
+import { glossaryText } from "../data/financialGlossary";
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={clsx("rounded-lg border border-ink-700 bg-ink-900 p-4", className)}>{children}</div>;
@@ -91,6 +93,33 @@ export function Th({ children, align = "left" }: { children?: ReactNode; align?:
 
 export function Td({ children, align = "left", className, colSpan }: { children: ReactNode; align?: "left" | "right"; className?: string; colSpan?: number }) {
   return <td colSpan={colSpan} className={clsx("border-b border-ink-800 py-1.5", align === "right" ? "text-right tabular-nums" : "text-left", className)}>{children}</td>;
+}
+
+/** A small "?" that reveals a plain-language explanation of a financial term on click — the "click to learn" education pattern used throughout Finance/Reports. */
+export function InfoTip({ term, text }: { term?: string; text?: string }) {
+  const [open, setOpen] = useState(false);
+  const body = text ?? (term ? glossaryText(term) : "");
+  if (!body) return null;
+  return (
+    <span className="relative inline-block align-middle">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-ink-700 text-[10px] font-bold text-ink-300 hover:bg-ink-600"
+        aria-label="What is this?"
+      >
+        ?
+      </button>
+      {open && (
+        <span className="absolute left-0 top-5 z-10 w-64 rounded-md border border-ink-600 bg-ink-950 p-2.5 text-left text-xs font-normal normal-case text-ink-200 shadow-lg">
+          {body}
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function ProgressBar({ value, max = 100, tone = "neutral" }: { value: number; max?: number; tone?: "neutral" | "good" | "bad" | "warn" }) {

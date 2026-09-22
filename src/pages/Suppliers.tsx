@@ -16,10 +16,18 @@ export default function Suppliers() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-bold">Suppliers</h1>
-      <Card>
-        <CardHeading subtitle="Split your purchasing across suppliers with the sliders below. A disruption only hits the share of business that supplier actually handles — diversifying spend matters, not just adding a name to the list.">
-          Current Relationships
-        </CardHeading>
+      {game.company.suppliers.length === 0 && (
+        <Card className="border-amber-700/60 bg-amber-950/20">
+          <p className="text-sm text-amber-300">
+            You don't have a raw-material source yet, so production can't run. Pick a supplier below to establish your first relationship — you can always add more later to diversify.
+          </p>
+        </Card>
+      )}
+      {game.company.suppliers.length > 0 && (
+        <Card>
+          <CardHeading subtitle="Split your purchasing across suppliers with the sliders below. A disruption only hits the share of business that supplier actually handles — diversifying spend matters, not just adding a name to the list.">
+            Current Relationships
+          </CardHeading>
         <Table>
           <thead>
             <tr><Th>Supplier</Th><Th align="right">Price</Th><Th align="right">Quality</Th><Th align="right">Reliability</Th><Th align="right">Terms</Th><Th align="right">Lead Time</Th><Th align="right">Allocation</Th><Th></Th></tr>
@@ -62,11 +70,12 @@ export default function Suppliers() {
         {game.company.suppliers.length === 1 && (
           <p className="mt-3 text-xs text-amber-400">You're single-sourced on pulp. A supplier disruption event will hit at full severity.</p>
         )}
-      </Card>
+        </Card>
+      )}
 
       <Card>
-        <CardHeading subtitle="Adding a supplier immediately takes 25% of purchasing allocation from your existing supplier(s) — rebalance with the sliders above afterward.">
-          Add a Supplier
+        <CardHeading subtitle={game.company.suppliers.length === 0 ? "Your first supplier will handle 100% of purchasing — add more later to diversify." : "Adding a supplier immediately takes 25% of purchasing allocation from your existing supplier(s) — rebalance with the sliders above afterward."}>
+          {game.company.suppliers.length === 0 ? "Choose Your First Supplier" : "Add a Supplier"}
         </CardHeading>
         {availableTemplates.length === 0 ? (
           <p className="text-sm text-ink-400">You're already working with every known supplier in this market.</p>

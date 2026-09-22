@@ -1,8 +1,39 @@
+import { useState } from "react";
 import { useGameStore } from "../store/useGameStore";
+import { getIndustryDefinition } from "../industries/registry";
 import { computeManagerSpanCapacity, directReportsOf } from "../engine/management";
+import { buildOrgTree, type OrgTreeNode } from "../engine/orgChart";
 import { formatMoney } from "../engine/dateUtils";
 import { Badge, Button, Card, CardHeading, ProgressBar, Table, Td, Th } from "../components/ui";
 import type { AuthorityLevel } from "../types/core";
+
+function OrgNode({ node, depth, onSelect }: { node: OrgTreeNode; depth: number; onSelect: (id: string) => void }) {
+  return (
+    <div className={depth > 0 ? "ml-5 border-l border-ink-700 pl-4" : ""}>
+      <button
+        onClick={() => onSelect(node.id)}
+        className={`my-1 flex items-center gap-2 rounded-md border px-3 py-1.5 text-left text-sm ${
+          node.isVacancy
+            ? "border-dashed border-amber-700 bg-amber-950/20 text-amber-300"
+            : node.isFounder
+              ? "border-emerald-600 bg-emerald-600/10"
+              : "border-ink-700 bg-ink-900 hover:bg-ink-800"
+        }`}
+      >
+        <span className="font-medium">{node.name}</span>
+        <span className="text-xs text-ink-400">{node.title}</span>
+        {node.overloaded && <Badge tone="bad">Needs attention</Badge>}
+      </button>
+      {node.children.length > 0 && (
+        <div>
+          {node.children.map((c) => (
+            <OrgNode key={c.id} node={c} depth={depth + 1} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const AUTHORITY_LABEL: Record<AuthorityLevel, string> = {
   "player-approval": "Player approval required",
@@ -22,6 +53,11 @@ export default function Management() {
   const setDelegationAuthority = useGameStore((s) => s.setDelegationAuthority);
   const approveManagerDecision = useGameStore((s) => s.approveManagerDecision);
   const rejectManagerDecision = useGameStore((s) => s.rejectManagerDecision);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  const industry = getIndustryDefinition(game.company.industryId)!;
+  const orgTree = buildOrgTree(game.company, industry.employeeRoles);
+  const selectedEmployee = selectedNodeId ? game.company.employees.find((e) => e.id === selectedNodeId) : null;
 
   const managers = game.company.employees.filter((e) => e.status === "active" && e.department === "management");
   const pending = game.company.managerDecisionLog.filter((d) => d.status === "pending-approval");
@@ -30,6 +66,34 @@ export default function Management() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-bold">Management</h1>
+
+      <Card>
+        <CardHeading subtitle="Real reporting relationships, not a diagram — every node is an actual employee (or a genuinely open, overloaded need). Click a node for their profile.">
+          Organization
+        </CardHeading>
+        <div className="overflow-x-auto pb-2">
+          <OrgNode node={orgTree} depth={0} onSelect={setSelectedNodeId} />
+        </div>
+        {selectedEmployee && (
+          <div className="mt-3 rounded-md border border-ink-700 bg-ink-950 p-3 text-sm">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-semibold">{selectedEmployee.name} — {selectedEmployee.title}</span>
+              <Button variant="ghost" onClick={() => setSelectedNodeId(null)}>Close</Button>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 text-xs text-ink-300 sm:grid-cols-4">
+              <div>Salary: {formatMoney(selectedEmployee.salaryWeekly)}/wk</div>
+              <div>Hired week {selectedEmployee.hireWeek}</div>
+              <div>Morale: {selectedEmployee.morale}/100</div>
+              <div>Direct reports: {directReportsOf(game.company, selectedEmployee.id).length}</div>
+            </div>
+          </div>
+        )}
+        {selectedNodeId?.startsWith("vacancy-") && (
+          <div className="mt-3 rounded-md border border-dashed border-amber-700 bg-amber-950/20 p-3 text-sm text-amber-200">
+            This function is overloaded with no manager owning it — promote an existing employee or post an opening from Hiring to fill this gap.
+          </div>
+        )}
+      </Card>
 
       {game.lastManagementSnapshot && (
         <Card>
