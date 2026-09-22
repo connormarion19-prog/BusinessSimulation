@@ -3,12 +3,10 @@ import { createNewGame } from "../src/engine/newGame";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance, accountBalance } from "../src/engine/ledger";
 import { addSupplierToCompany } from "../src/engine/suppliers";
-import { pitchProspect } from "../src/engine/prospecting";
-import { getIndustryDefinition } from "../src/industries/registry";
-import { createRng } from "../src/engine/rng";
 import { flagOverdueRecords } from "../src/engine/orderLedger";
+import { getIndustryDefinition } from "../src/industries/registry";
+import { makeTestCustomer } from "./testHelpers";
 import type { NewCompanyParams } from "../src/types/industry";
-import type { CustomerPitch } from "../src/types/core";
 
 function baseParams(overrides: Partial<NewCompanyParams> = {}): NewCompanyParams {
   return {
@@ -26,30 +24,22 @@ function baseParams(overrides: Partial<NewCompanyParams> = {}): NewCompanyParams
   };
 }
 
-function winFirstCustomer(game: ReturnType<typeof createNewGame>, rng: ReturnType<typeof createRng>) {
-  const prospect = game.company.prospects[0];
-  // Pin the prospect to the home region: a customer outside any market the company has actively
-  // entered generates zero demand (a real, pre-existing limitation of regional market entry, not
-  // something this test is exercising) — irrelevant noise for testing the invoicing mechanism itself.
-  prospect.locationId = game.company.locationId;
-  prospect.status = "qualified";
-  const pitch: CustomerPitch = {
+/** Adds a customer directly rather than going through the probabilistic sales-funnel pitch — that
+ * mechanic (and its win-rate) is already covered by tests/salesFunnel.test.ts; these tests are about
+ * the invoice/order ledger reconciliation, so a deterministic, always-present customer is the right
+ * level of test isolation rather than depending on a random prospect's hidden truth + a pitch roll. */
+function addTestCustomer(game: ReturnType<typeof createNewGame>) {
+  const customer = makeTestCustomer({
+    id: "cust-fixed-1",
+    name: "Fixed Test Customer",
     productId: game.company.products[0].id,
-    priceOffered: prospect.trueWillingnessToPayPerUnit * 0.85,
-    volumeCommitmentUnits: prospect.trueAnnualVolumeUnits,
-    paymentTermsDaysOffered: prospect.truePaymentTermsDays + 14,
-    contractLengthWeeks: 52,
-  };
-  let result;
-  let attempts = 0;
-  do {
-    const status: string = prospect.status;
-    if (status === "negotiation") prospect.status = "qualified";
-    result = pitchProspect(game.company, prospect.id, pitch, 1.5, 1.0, game.week, game.currentDate, rng);
-    game.company.entries.push(...result.entries);
-    attempts++;
-  } while (!result.won && attempts < 8 && (prospect.status as string) !== "lost");
-  return result.won;
+    locationId: game.company.locationId,
+    annualVolumeUnits: 1500,
+    paymentTermsDays: 30,
+    relationshipStrength: 70,
+  });
+  game.company.customers.push(customer);
+  return customer;
 }
 
 describe("purchase orders and bills", () => {
@@ -84,13 +74,10 @@ describe("purchase orders and bills", () => {
 
 describe("customer orders and invoices", () => {
   it("a contracted customer's fulfilled weekly demand creates a real invoice at their own payment terms", () => {
-    const rng = createRng(21);
     const game = createNewGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "regional-pulp-co", game.week, game.currentDate);
-    const won = winFirstCustomer(game, rng);
-    expect(won).toBe(true);
-    const customer = game.company.customers[0];
+    const customer = addTestCustomer(game);
 
     for (let i = 0; i < 6; i++) advanceWeek(game);
     const customerInvoices = game.company.invoices.filter((inv) => inv.customerId === customer.id);
@@ -102,11 +89,10 @@ describe("customer orders and invoices", () => {
   });
 
   it("invoices reconcile to real cash collected — total invoiced amountPaid never exceeds total AR credited", () => {
-    const rng = createRng(22);
     const game = createNewGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "regional-pulp-co", game.week, game.currentDate);
-    winFirstCustomer(game, rng);
+    addTestCustomer(game);
     for (let i = 0; i < 20; i++) advanceWeek(game);
 
     const totalInvoicedAmountPaid = game.company.invoices.reduce((s, inv) => s + inv.amountPaid, 0);
@@ -137,11 +123,10 @@ describe("customer orders and invoices", () => {
   });
 
   it("real weekly collections genuinely pay invoices down and eventually clear them, reflected in the AR balance", () => {
-    const rng = createRng(23);
     const game = createNewGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "regional-pulp-co", game.week, game.currentDate);
-    winFirstCustomer(game, rng);
+    addTestCustomer(game);
     for (let i = 0; i < 30; i++) advanceWeek(game);
     const paidInvoices = game.company.invoices.filter((inv) => inv.status === "paid");
     expect(paidInvoices.length).toBeGreaterThan(0);
