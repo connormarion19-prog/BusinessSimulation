@@ -322,21 +322,88 @@ consequence, rather than one long form.
   reads) appear as explicit vacancy nodes, so an org gap is as visible as an
   org chart.
 
+**The real operating loop (Phase 5): find, negotiate, sell, buy, produce, deliver,
+get paid.** The core sales/procurement mechanics were rebuilt around discrete,
+inspectable business processes instead of implicit background math.
+
+- **Sales funnel & negotiation (Customers tab, `engine/prospecting.ts`).** A
+  prospect now moves through real stages — new → researched → contacted →
+  interested → qualified → pitch/negotiation → won/lost — not a flat 5-state
+  model. `contactProspect` lets the player pick an outreach method (cold
+  outreach/email/phone/in-person meeting) with real, disclosed cost and odds
+  differences; `qualifyProspect` confirms real fit before a pitch is allowed
+  (skipping research first makes this meaningfully riskier). A near-miss pitch
+  no longer just loses — it reveals a real counter-offer computed from the
+  prospect's hidden truth, which `acceptProspectCounterOffer` can close outright.
+  The UI shows every stage's panel automatically as the prospect advances.
+- **Supplier negotiation (Suppliers tab, `engine/supplierNegotiation.ts`).**
+  `negotiateSupplierTerms` computes how much a supplier will actually give up
+  from how aggressive the ask is relative to their current price, the
+  company's purchasing skill, committed volume, and how many rounds this
+  relationship has already been renegotiated — a reasonable ask succeeds
+  outright, a moderately aggressive one gets a real counter-offer, a wildly
+  aggressive one is rejected, and a relationship can't be renegotiated again
+  for 4 weeks after a successful round.
+- **Real orders, invoices, purchase orders, and bills
+  (`engine/orderLedger.ts`).** Every contracted customer's fulfilled weekly
+  volume creates a discrete `SalesOrder` + `Invoice` (amount, issue date, due
+  date from their own payment terms, status); every supplier delivery creates
+  a discrete `PurchaseOrder` + `Bill` the same way. These are reconciled
+  against the exact same real dollar amounts the existing, long-horizon-tested
+  weekly AR/AP mechanic already computes (oldest-due-first, weighted by each
+  customer's own payment reliability) — a faithful, per-transaction *view* of
+  real collection behavior, never a second, divergent source of truth.
+  Customers gained `paymentReliability`, `ordersFulfilled`/`ordersMissed`, and
+  real contract length/end-week fields.
+- **Inventory coverage, price scenarios, break-even, and cash forecasting
+  (Finance tab, `engine/decisionSupport.ts`).** Real weeks-of-coverage for raw
+  materials and each finished-goods line; a price-testing tool projecting
+  volume/revenue/gross-profit ranges at a hypothetical price (capped by real
+  facility capacity, never telling the player which price to pick); a
+  break-even/contribution-margin analysis that explicitly treats only
+  materials as variable (labor and overhead are salaried/leased in this game,
+  not paid per unit, and that distinction is surfaced rather than hidden); and
+  an 8-week cash-flow forecast with a range that widens the further out it
+  reaches, built from the same real burn-rate components the existing cash-
+  runway warning already used.
+- **Business milestones & reputation (`engine/milestones.ts`).** First
+  employee hired, first customer signed, first commercial sale, first
+  profitable week/month now land in company history as real, permanent
+  markers alongside the existing stage-change and revenue-threshold ones —
+  historical record, not achievements. `Company.reputation` (0-100, starts
+  neutral) rises on winning a customer and falls when one newly goes at-risk,
+  nudging pitch odds by a small, bounded amount — built from real history,
+  never a player-set slider.
+- **Decision queue.** Overdue customer invoices, overdue supplier bills, and
+  prospects sitting in an open negotiation now surface as real pending
+  decisions alongside the existing ones (cash warnings, staffing gaps,
+  manager approvals, etc.) on the Overview dashboard.
+
 **Explicitly out of scope for this pass**: the other 14 industries, international
 expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, true
 per-region pricing (price is still set once per product company-wide, though its
 competitiveness is evaluated against each region's own price level), market
 research spend to reduce expansion uncertainty, deeper competitor AI reacting to
 specific player moves (a new regional entry, a price change) rather than the
-market in aggregate, supplier-side hidden-information/negotiation (supplier
-price/quality/reliability are shown plainly, unlike the customer side), an
-Easy-mode rebalance, a task-queue view of an individual employee's workload, and
-a "what if I changed the price" live preview on the product economics table.
-These are the natural next phases on top of a validated, tested core engine.
+market in aggregate, and an Easy-mode rebalance. Also out of scope from Phase 5's
+brief specifically: a second raw-material input type (chemicals/packaging —
+suppliers still all source the same pulp input); a literal modal-popup framework
+for every major decision (the existing, now-expanded Decision Queue plus each
+system's own real page serves the same purpose — "SET PRICE" is the Products
+page, "BUY MATERIALS" is Suppliers, "ACCEPT CUSTOMER DEAL" is the funnel on
+Customers — deliberately, so the game isn't a click-through of popups); explicit
+manual weekly production-allocation-by-order (production remains automatic/
+formulaic, informed by the same real capacity/inventory data now surfaced on
+Finance, rather than requiring a per-order allocation click every week); a
+dedicated weekly business-calendar view (the narrative notes, history log, and
+decision queue substantially cover "what's happening," but not as a calendar
+UI); and granular per-task employee instrumentation beyond the existing weekly
+performance/evaluation system, which already serves the same purpose. These are
+the natural next phases on top of a validated, tested core engine.
 
 ## Testing
 
-`npm test` runs 88 Vitest cases covering the systems most likely to break silently:
+`npm test` runs 118 Vitest cases covering the systems most likely to break silently:
 double-entry posting/rejection of unbalanced entries, trial-balance integrity,
 loan amortization to a zero balance, weekly evaluations generating from real
 hired-employee data, a JSON save/load round trip, a **260-week (5 calendar year)
@@ -387,6 +454,28 @@ build-from-scratch run (zero suppliers/customers → first supplier → first wo
 customer → running business) stays balanced throughout. Existing tests that
 implicitly relied on a free starting supplier now go through a small wrapper
 (`tests/testHelpers.ts` `createTestGame`) that adds one explicitly, so the
-~50 pre-existing `createNewGame` call sites needed no individual rewrite. An
-unbalanced ledger is treated as a bug, never a tolerated state, anywhere in
-this suite.
+~50 pre-existing `createNewGame` call sites needed no individual rewrite.
+**Phase 5's operating loop** adds six more suites (30 cases):
+`salesFunnel.test.ts` (contact/qualify gating and odds, a real negotiable
+near-miss revealing a counter-offer that always closes on accept);
+`supplierNegotiation.test.ts` (a reasonable ask succeeds and genuinely moves
+price, a wildly aggressive one is flatly rejected, a moderate one gets a real
+counter, minimum-order and 4-week cooldown are enforced);
+`ordersAndInvoicing.test.ts` (every delivery/fulfillment creates a real PO+bill
+or order+invoice with a correct due date, invoiced payments never exceed real
+AR collected, overdue flagging); `decisionSupport.test.ts` (inventory coverage,
+price-scenario volume direction and capacity clamping, break-even's fixed/
+variable split, cash-forecast range widening over time); `milestones.test.ts`;
+and `phase5Integration.test.ts`, a single end-to-end run from a truly empty
+company through find supplier → negotiate → materials ordered/received → find
+and win a customer through the real funnel → production → real invoice →
+invoice paid → bill paid → COGS/gross-profit/net-income reconciling → the
+accounting identity holding at every step. Getting this last test
+deterministic surfaced and fixed a real pre-existing issue: `createNewGame`
+seeds its own RNG from `Date.now()`/`Math.random()` by design (so real
+gameplay is never identically seeded), which makes any single-shot test that
+hard-asserts a probabilistic win/loss outcome flaky — fixed by pursuing
+prospects biggest-first with a fallback to the next one on a dead end (real
+founder behavior, not test-rigging) and asserting "at least one won" where a
+genuine random event could add a second. An unbalanced ledger is treated as a
+bug, never a tolerated state, anywhere in this suite.
