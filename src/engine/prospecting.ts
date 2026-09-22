@@ -4,6 +4,7 @@ import type { RngState } from "./rng";
 import { nextRange, pick, chance } from "./rng";
 import { makeEntry, dr, cr, round2 } from "./ledger";
 import { LOCATIONS, LOCATIONS_BY_ID } from "../data/locations";
+import { recordMilestoneOnce } from "./milestones";
 
 const PROSPECT_NAME_PREFIXES = ["Midwest", "Lakeshore", "Heartland", "Union", "Crestview", "Summit", "Parkway", "Northfield", "Ironbridge", "Fairhaven"];
 const PROSPECT_NAME_SUFFIXES = ["Office Supply", "Distribution", "Wholesale Partners", "Print & Copy", "Converting Co.", "Supply Partners", "Materials Group", "Trading Co."];
@@ -231,6 +232,9 @@ export function pitchProspect(
   const termsFit = pitch.paymentTermsDaysOffered >= prospect.truePaymentTermsDays ? 1 : 0.25;
   const qualityFit = Math.max(0.2, Math.min(1.15, productQualityFactor / Math.max(0.2, prospect.trueQualityExpectation)));
   const switchingFriction = prospect.hasCurrentSupplier ? 0.05 : 0;
+  // A track record of happy customers makes the next pitch easier; a poor one makes it harder — a
+  // real, bounded nudge (+/-3pp at the reputation extremes), never the dominant factor in the math.
+  const reputationFactor = (company.reputation - 50) / 1000;
 
   const baseCloseProbability =
     0.04 +
@@ -239,7 +243,8 @@ export function pitchProspect(
     termsFit * 0.06 +
     Math.min(1, qualityFit) * 0.1 +
     Math.max(0, salesSkillFactor - 0.5) * 0.22 -
-    switchingFriction;
+    switchingFriction +
+    reputationFactor;
 
   const attemptFatigue = Math.max(0, (prospect.contactAttempts - 1) * 0.04); // repeated identical pitches don't help much
   const closeProbability = Math.max(0.02, Math.min(0.92, baseCloseProbability - attemptFatigue));
@@ -271,6 +276,7 @@ export function pitchProspect(
       ordersMissed: 0,
       complaints: 0,
     };
+    const isFirstCustomer = company.customers.length === 0;
     company.customers.push(customer);
     prospect.wonCustomerId = customer.id;
     company.historyLog.push({
@@ -280,6 +286,8 @@ export function pitchProspect(
       detail: `Signed at $${pitch.priceOffered.toFixed(2)}/unit, ~${pitch.volumeCommitmentUnits.toLocaleString()} units/yr committed, ${pitch.paymentTermsDaysOffered}-day terms, ${contractLengthWeeks}-week contract.`,
       category: "market",
     });
+    if (isFirstCustomer) recordMilestoneOnce(company, week, date, "First customer signed", `${customer.name} became the company's first contracted customer.`);
+    company.reputation = Math.min(100, Math.round(company.reputation + 2));
     return { ok: true, won: true, reason: "Closed the deal.", entries };
   }
 
@@ -357,6 +365,7 @@ export function acceptProspectCounterOffer(
     ordersMissed: 0,
     complaints: 0,
   };
+  const isFirstCustomer = company.customers.length === 0;
   company.customers.push(customer);
   prospect.wonCustomerId = customer.id;
   company.historyLog.push({
@@ -366,5 +375,7 @@ export function acceptProspectCounterOffer(
     detail: `Accepted their counter: $${priceOffered.toFixed(2)}/unit, ~${volumeCommitmentUnits.toLocaleString()} units/yr, ${paymentTermsDaysOffered}-day terms, ${contractLengthWeeks}-week contract.`,
     category: "market",
   });
+  if (isFirstCustomer) recordMilestoneOnce(company, week, date, "First customer signed", `${customer.name} became the company's first contracted customer.`);
+  company.reputation = Math.min(100, Math.round(company.reputation + 2));
   return { ok: true, won: true, reason: "Accepted their counter-offer.", entries };
 }

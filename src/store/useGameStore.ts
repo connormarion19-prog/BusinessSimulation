@@ -23,6 +23,7 @@ import {
   acceptProspectCounterOffer as acceptProspectCounterOfferEngine,
 } from "../engine/prospecting";
 import { computeStaffingGaps } from "../engine/workload";
+import { recordMilestoneOnce } from "../engine/milestones";
 import type { CustomerCounterOffer, CustomerPitch, OutreachMethod, SupplierCounterOffer, SupplierNegotiationOffer } from "../types/core";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
@@ -307,6 +308,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       if (manager) employee.managerId = manager.id;
     }
 
+    const isFirstEmployee = next.company.employees.length === 0;
     next.company.employees.push(employee);
     opening.status = "filled";
     opening.filledByEmployeeId = employee.id;
@@ -316,6 +318,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       headline: `Hired ${employee.name} as ${employee.title}`,
       category: "hiring",
     });
+    if (isFirstEmployee) {
+      recordMilestoneOnce(next.company, next.week, next.currentDate, "First employee hired", `${employee.name} became the company's first employee, as ${employee.title}.`);
+    }
     set({ game: next });
   },
 

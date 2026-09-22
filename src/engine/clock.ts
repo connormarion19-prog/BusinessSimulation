@@ -18,6 +18,7 @@ import { processInTransitShipments } from "./logistics";
 import { driftRegionalMarket, syncHomeRegion } from "./geography";
 import { refreshProspectPool } from "./prospecting";
 import { computeCashRunwayWarning, explainLoss } from "./financialExplain";
+import { recordMilestoneOnce } from "./milestones";
 import { LOCATIONS_BY_ID } from "../data/locations";
 
 function determineStage(employeeCount: number): GameState["company"]["stage"] {
@@ -177,6 +178,19 @@ export function advanceWeek(state: GameState): GameState {
   for (const [threshold, headline] of milestoneChecks) {
     if (cumulativeRevenue >= threshold && !hasMilestone(state.company, headline)) {
       state.company.historyLog.push({ week: newWeek, date, headline, category: "milestone" });
+    }
+  }
+  if (snapshot.unitsSold > 0) {
+    recordMilestoneOnce(state.company, newWeek, date, "First commercial sale", `${state.company.name} completed its first commercial sale.`);
+  }
+  if (finalIncomeStatement.netIncome > 0) {
+    recordMilestoneOnce(state.company, newWeek, date, "First profitable week", `${state.company.name} posted its first profitable week (net income $${Math.round(finalIncomeStatement.netIncome).toLocaleString()}).`);
+  }
+  if (state.company.kpiHistory.length >= 4) {
+    const trailing4 = state.company.kpiHistory.slice(-4);
+    const trailingNetIncome = trailing4.reduce((s, k) => s + k.netIncome, 0);
+    if (trailingNetIncome > 0) {
+      recordMilestoneOnce(state.company, newWeek, date, "First profitable month", `${state.company.name}'s trailing 4 weeks turned a combined profit for the first time.`);
     }
   }
 

@@ -564,12 +564,16 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
       const fulfillRatio = totalOrders > 0 ? unitsSold / totalOrders : 1;
 
       for (const customer of channel.customers) {
+        const wasAtRisk = customer.atRisk;
         if (fulfillRatio > 0.95 && salesEffectiveness > 0.9) {
           customer.relationshipStrength = clamp(customer.relationshipStrength + 1, 0, 100);
           customer.atRisk = false;
         } else if (fulfillRatio < 0.7) {
           customer.relationshipStrength = clamp(customer.relationshipStrength - 6, 0, 100);
           if (customer.relationshipStrength < 35) customer.atRisk = true;
+        }
+        if (!wasAtRisk && customer.atRisk) {
+          company.reputation = Math.max(0, Math.round(company.reputation - 3));
         }
         if (fulfillRatio > 0.95) customer.ordersFulfilled += 1;
         else if ((channel.customerOrders.get(customer.id) ?? 0) > 0.5) customer.ordersMissed += 1;
