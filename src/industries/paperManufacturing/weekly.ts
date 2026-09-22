@@ -4,7 +4,8 @@ import type { Department, Employee, WeeklyEvaluation } from "../../types/employe
 import type { CustomerAccount, MarketEntry, ProductLine, SupplierRelationship } from "../../types/core";
 import { makeEntry, dr, cr, round2, accountBalance } from "../../engine/ledger";
 import { chance, nextRange } from "../../engine/rng";
-import { computeWeeklyPerformance, updateMoraleAndFatigue, type PerformanceResult } from "../../engine/performance";
+import { computeWeeklyPerformance, updateMoraleAndFatigue, computeFunctionSkill, totalAllocationPct, computeOverallocationPenalty, WORK_FUNCTIONS, type PerformanceResult } from "../../engine/performance";
+import type { WorkFunction } from "../../types/employee";
 import { buildEvaluation } from "../../engine/evaluation";
 import { rollWeeklyEvents } from "../../engine/events";
 import { PAPER_EVENTS, supplierShortfallFlagKey } from "./events";
@@ -35,6 +36,10 @@ const PAYROLL_ROUTING: Record<string, "labor" | "overhead" | "admin" | "sales"> 
   "sales-manager": "sales",
   bookkeeper: "admin",
   controller: "admin",
+  "business-generalist": "admin",
+  "operations-associate": "admin",
+  "sales-operations-associate": "admin",
+  "finance-admin-associate": "admin",
 };
 
 function clamp(n: number, min: number, max: number): number {
@@ -67,6 +72,33 @@ function deductFacilityInventory(product: ProductLine, preferredFacilityId: stri
 
 function activeByRole(ctx: IndustrySimContext, roleId: string): Employee | undefined {
   return ctx.company.employees.find((e) => e.status === "active" && e.roleId === roleId);
+}
+
+/**
+ * Additional function capacity from every active employee who isn't already the "primary" skill
+ * source for that function (a dedicated specialist, if one exists) but has real allocated time in
+ * it — most notably generalists who split their week across several functions. This is genuinely
+ * additive on top of the primary-source formulas, so a single-specialist-per-function company (the
+ * historical/common case) sees zero change, while hiring a generalist visibly adds capacity.
+ */
+function supplementalFunctionSkill(
+  activeEmployees: Employee[],
+  perfByEmployeeId: Record<string, PerformanceResult>,
+  fn: WorkFunction,
+  excludeEmployeeId: string | undefined,
+): number {
+  let total = 0;
+  for (const emp of activeEmployees) {
+    if (emp.id === excludeEmployeeId) continue;
+    const pct = emp.allocation[fn] ?? 0;
+    if (pct <= 0) continue;
+    const role = PAPER_ROLES_BY_ID[emp.roleId];
+    const affinity = role?.functionAffinity[fn] ?? 0.3;
+    const perf = perfByEmployeeId[emp.id];
+    const skill = computeFunctionSkill(emp, fn, affinity) * (perf?.rampFactor ?? 1) * (perf?.moraleFactor ?? 1) * computeOverallocationPenalty(totalAllocationPct(emp));
+    total += (pct / 100) * skill;
+  }
+  return total;
 }
 
 /** The active manager (department: "management") whose role oversees the given operational department, if one exists. */
@@ -131,7 +163,8 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   const purchasingSkill = purchasingSkillSource
     ? perfByEmployeeId[purchasingSkillSource.id].coreSkill
     : FOUNDER_BASE_SKILL * (0.5 + company.founderAllocation.purchasing) * founderEffectiveness;
-  const purchasingEffectiveness = clamp(purchasingSkill / 65, 0.5, 1.4);
+  const supplementalPurchasingSkill = supplementalFunctionSkill(activeEmployees, perfByEmployeeId, "purchasing", purchasingSkillSource?.id);
+  const purchasingEffectiveness = clamp((purchasingSkill + supplementalPurchasingSkill * 0.8) / 65, 0.5, 1.6);
   const bufferWeeks = clamp(1 + purchasingEffectiveness, 1, 3.5);
 
   const operatingFacilities = company.facilities.filter((f) => f.status === "operating");
@@ -203,6 +236,25 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     const reportsToPlantManager = plantManager !== undefined && emp.managerId === plantManager.id;
     const bonus = reportsToPlantManager ? plantManagerBonus : 1;
     const contribution = base * perfByEmployeeId[emp.id].outputFactor * bonus;
+    facilityLaborCapacity.set(facilityId, (facilityLaborCapacity.get(facilityId) ?? 0) + contribution);
+    totalLaborCapacity += contribution;
+  }
+
+  // Generalists who aren't dedicated production-worker/machine-operator hires still add real floor
+  // capacity wherever they've allocated operations time — a genuinely additional, smaller-scale
+  // contribution on top of the dedicated production headcount above.
+  for (const emp of activeEmployees) {
+    if (emp.roleId === "production-worker" || emp.roleId === "machine-operator") continue;
+    const opsPct = emp.allocation.operations ?? 0;
+    if (opsPct <= 0) continue;
+    const role = PAPER_ROLES_BY_ID[emp.roleId];
+    const affinity = role?.functionAffinity.operations ?? 0.3;
+    const perf = perfByEmployeeId[emp.id];
+    const fnSkill = computeFunctionSkill(emp, "operations", affinity);
+    const fnOutputFactor = (fnSkill / 68) * perf.rampFactor * perf.moraleFactor * perf.fatigueFactor * computeOverallocationPenalty(totalAllocationPct(emp));
+    const contribution = PRODUCTION_WORKER_BASE_UNITS * (opsPct / 100) * fnOutputFactor;
+    if (contribution <= 0) continue;
+    const facilityId = emp.facilityId && facilityLaborCapacity.has(emp.facilityId) ? emp.facilityId : homeFacility.id;
     facilityLaborCapacity.set(facilityId, (facilityLaborCapacity.get(facilityId) ?? 0) + contribution);
     totalLaborCapacity += contribution;
   }
@@ -387,6 +439,9 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   } else {
     salesEffectiveness = clamp((0.55 + company.founderAllocation.sales * 0.9) * founderEffectiveness, 0.3, 1.3);
   }
+  const salesSkillSourceId = salesManager?.id ?? salesRep?.id;
+  const supplementalSalesSkill = supplementalFunctionSkill(activeEmployees, perfByEmployeeId, "sales", salesSkillSourceId);
+  salesEffectiveness = clamp(salesEffectiveness + supplementalSalesSkill / 130, 0.3, 1.8);
   const competitorCapacity = ctx.competitors.reduce((s, c) => s + c.capacityUnits, 0);
   const homeLocationId = company.locationId;
 
@@ -607,12 +662,12 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   // ---- 5. Accounting: AR/AP steady-state collection & payment ----
   const bookkeeper = activeByRole(ctx, "bookkeeper");
   const controller = managerForDepartment(ctx, "accounting");
-  const accountingSkill = controller
-    ? perfByEmployeeId[controller.id].coreSkill
-    : bookkeeper
-      ? perfByEmployeeId[bookkeeper.id].coreSkill
-      : FOUNDER_BASE_SKILL * (0.5 + company.founderAllocation.accounting) * founderEffectiveness;
-  const accountingEffectiveness = clamp(accountingSkill / 65, 0.6, 1.3);
+  const accountingSkillSource = controller ?? bookkeeper;
+  const accountingSkill = accountingSkillSource
+    ? perfByEmployeeId[accountingSkillSource.id].coreSkill
+    : FOUNDER_BASE_SKILL * (0.5 + company.founderAllocation.accounting) * founderEffectiveness;
+  const supplementalAccountingSkill = supplementalFunctionSkill(activeEmployees, perfByEmployeeId, "accounting", accountingSkillSource?.id);
+  const accountingEffectiveness = clamp((accountingSkill + supplementalAccountingSkill * 0.8) / 65, 0.6, 1.6);
 
   const avgCustomerTermsWeeks = company.customers.length
     ? company.customers.reduce((s, c) => s + c.paymentTermsDays, 0) / company.customers.length / 7
@@ -640,15 +695,18 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     const errors = Math.round(perf.errorRate * 10);
     const { highlights, concerns, metrics } = emp.department === "management"
       ? buildManagerNarrative(emp, activeEmployees, perfByEmployeeId)
-      : buildRoleNarrative(emp.roleId, perf, {
-          goodUnits: totalGoodUnits,
-          scrapUnits: totalScrapUnits,
-          unitsSold: sellableProducts.reduce((s, p) => s + p.unitsSoldLastWeek, 0),
-          collected,
-          apPaid,
-          orderQty: totalOrderQty,
-        });
-    const { morale, fatigue } = updateMoraleAndFatigue(emp, { weekWasHeavy: perf.errorRate > 0.1, recentRaise: emp.lastRaiseWeek === week, recentRecognition: false });
+      : PAPER_ROLES_BY_ID[emp.roleId]?.roleClass === "generalist"
+        ? buildGeneralistNarrative(emp, perf)
+        : buildRoleNarrative(emp.roleId, perf, {
+            goodUnits: totalGoodUnits,
+            scrapUnits: totalScrapUnits,
+            unitsSold: sellableProducts.reduce((s, p) => s + p.unitsSoldLastWeek, 0),
+            collected,
+            apPaid,
+            orderQty: totalOrderQty,
+          });
+    const overallocated = totalAllocationPct(emp) > 100;
+    const { morale, fatigue } = updateMoraleAndFatigue(emp, { weekWasHeavy: perf.errorRate > 0.1 || overallocated, recentRaise: emp.lastRaiseWeek === week, recentRecognition: false });
     emp.morale = morale;
     emp.fatigue = fatigue;
     emp.cumulativeErrors += errors;
@@ -702,6 +760,39 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   };
 
   return { entries, market: updatedMarket, narrativeNotes, historyEvents, evaluations };
+}
+
+const WORK_FUNCTION_LABEL: Record<string, string> = {
+  accounting: "accounting",
+  purchasing: "purchasing",
+  sales: "sales",
+  operations: "operations",
+  administration: "administrative work",
+};
+
+/** A generalist's evaluation is built from their actual allocation split, not a fixed role script — reflects genuinely how their week was actually spent. */
+function buildGeneralistNarrative(emp: Employee, perf: PerformanceResult): { highlights: string[]; concerns: string[]; metrics: Record<string, number> } {
+  const highlights: string[] = [];
+  const concerns: string[] = [];
+  const total = totalAllocationPct(emp);
+  const sorted = [...WORK_FUNCTIONS].map((fn) => [fn, emp.allocation[fn] ?? 0] as const).filter(([, pct]) => pct > 0).sort((a, b) => b[1] - a[1]);
+  const splitText = sorted.map(([fn, pct]) => `${Math.round(pct)}% ${WORK_FUNCTION_LABEL[fn]}`).join(", ");
+  highlights.push(splitText ? `Split working time roughly ${splitText} this week.` : "No working capacity allocated this week — sitting idle.");
+  if (sorted.length > 0) {
+    const [topFn] = sorted[0];
+    if (perf.outputFactor > 1.05) highlights.push(`Output on ${WORK_FUNCTION_LABEL[topFn]}, their largest allocation, was above a typical week.`);
+  }
+  const overBy = total - 100;
+  if (overBy > 0.5) {
+    concerns.push(`Allocated ${Math.round(total)}% of a full week across all responsibilities — overallocated by ${Math.round(overBy)}%, which is dragging down output and error rate.`);
+  } else if (total < 60) {
+    concerns.push(`Only ${Math.round(total)}% of a full week is currently allocated — real spare capacity here.`);
+  }
+  if (perf.errorRate > 0.1) concerns.push("A higher-than-usual error rate this week is worth watching.");
+
+  const metrics: Record<string, number> = { outputFactor: round2(perf.outputFactor), errorRate: round2(perf.errorRate * 100), totalAllocation: round2(total) };
+  for (const [fn, pct] of sorted) metrics[`alloc_${fn}`] = pct;
+  return { highlights, concerns, metrics };
 }
 
 function buildRoleNarrative(

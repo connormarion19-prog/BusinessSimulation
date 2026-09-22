@@ -91,6 +91,13 @@ export function generateCandidateForRole(role: EmployeeRoleTemplate, rng: RngSta
   if (role.department === "sales") traits.communication = clampTrait(traits.communication + 10);
   if (role.department === "accounting") traits.attentionToDetail = clampTrait(traits.attentionToDetail + 10);
   if (role.department === "management") traits.leadership = clampTrait(traits.leadership + 12);
+  if (role.roleClass === "generalist") {
+    // Broad but moderate: a real edge in versatility traits rather than one deep specialization.
+    traits.adaptability = clampTrait(traits.adaptability + 10);
+    traits.organization = clampTrait(traits.organization + 6);
+    traits.communication = clampTrait(traits.communication + 6);
+    traits.learningAbility = clampTrait(traits.learningAbility + 6);
+  }
 
   const education = educationForRole(rng, role);
   const employers = priorEmployersFor(rng, nextInt(rng, 0, 3));
@@ -194,6 +201,7 @@ export function scoreCandidateForRole(candidate: Candidate, role: EmployeeRoleTe
 export function buildEmployeeFromCandidate(params: {
   candidate: Candidate;
   opening: JobOpening;
+  role: EmployeeRoleTemplate;
   week: number;
   salaryWeekly: number;
   facilityId: string | null;
@@ -211,6 +219,7 @@ export function buildEmployeeFromCandidate(params: {
     salaryWeekly: params.salaryWeekly,
     managerId: params.managerId,
     facilityId: params.facilityId,
+    allocation: { ...params.role.defaultAllocation },
     traits: params.candidate.traits,
     education: params.candidate.education,
     priorEmployers: params.candidate.priorEmployers,

@@ -13,7 +13,7 @@ export default function Operations() {
   const activeProducts = company.products.filter((p) => p.active);
 
   const [alloc, setAlloc] = useState(company.founderAllocation);
-  const allocTotal = alloc.production + alloc.purchasing + alloc.sales + alloc.accounting;
+  const allocTotal = alloc.production + alloc.purchasing + alloc.sales + alloc.accounting + alloc.administration;
 
   const totalCapacityAllocated = activeProducts.reduce((s, p) => s + p.capacityAllocationPct, 0);
   const machineCapacity = facility.baseWeeklyCapacityUnits * (facility.condition / 100);
@@ -69,7 +69,7 @@ export default function Operations() {
           Founder Time Allocation
         </CardHeading>
         <div className="flex flex-col gap-3">
-          {(["production", "purchasing", "sales", "accounting"] as const).map((dept) => (
+          {(["production", "purchasing", "sales", "accounting", "administration"] as const).map((dept) => (
             <div key={dept} className="flex items-center gap-3">
               <span className="w-24 shrink-0 text-sm capitalize">{dept}</span>
               <input

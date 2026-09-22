@@ -1,4 +1,11 @@
-import type { EmployeeRoleTemplate } from "../../types/employee";
+import type { EmployeeRoleTemplate, WorkFunction } from "../../types/employee";
+
+/** A pure specialist: high affinity in exactly one function, low everywhere else. */
+function specialistAffinity(primary: WorkFunction, primaryLevel = 1.2, secondaryLevel = 0.15): Record<WorkFunction, number> {
+  const base: Record<WorkFunction, number> = { accounting: secondaryLevel, purchasing: secondaryLevel, sales: secondaryLevel, operations: secondaryLevel, administration: secondaryLevel };
+  base[primary] = primaryLevel;
+  return base;
+}
 
 export const PAPER_ROLES: EmployeeRoleTemplate[] = [
   {
@@ -9,6 +16,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [32_000, 42_000],
     description: "Feeds and tends the converting line, packs finished cases, handles material movement on the floor.",
     delegates: "Manual production work you'd otherwise have to do yourself to keep the line running.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("operations"),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 0, operations: 100, administration: 0 },
   },
   {
     id: "machine-operator",
@@ -18,6 +28,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [38_000, 52_000],
     description: "Runs the converting/cutting equipment directly — skill here drives both output rate and scrap rate.",
     delegates: "Skilled machine operation; without one, a production worker runs equipment less efficiently.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("operations", 1.25),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 0, operations: 100, administration: 0 },
   },
   {
     id: "maintenance-tech",
@@ -27,6 +40,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [42_000, 58_000],
     description: "Services the equipment on a schedule instead of only after it breaks, slowing condition decay and shortening downtime when it does.",
     delegates: "Preventive maintenance — without this role, equipment condition degrades faster and breakdowns last longer.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("operations", 1.15),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 0, operations: 100, administration: 0 },
   },
   {
     id: "quality-inspector",
@@ -36,6 +52,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [36_000, 48_000],
     description: "Catches defective output before it reaches a customer, reducing scrap loss and complaint-driven churn.",
     delegates: "Outgoing quality checks — without one, more defects reach customers.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("operations", 1.1),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 0, operations: 100, administration: 0 },
   },
   {
     id: "purchasing-agent",
@@ -45,6 +64,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [38_000, 55_000],
     description: "Negotiates with pulp suppliers, times orders, and manages raw-material inventory levels.",
     delegates: "The buying decisions you're currently making yourself every week.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("purchasing"),
+    defaultAllocation: { accounting: 0, purchasing: 100, sales: 0, operations: 0, administration: 0 },
   },
   {
     id: "sales-rep",
@@ -54,6 +76,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [40_000, 60_000],
     description: "Maintains existing distributor/print-shop relationships and pursues new accounts.",
     delegates: "Prospecting and account management you're currently handling yourself.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("sales"),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 100, operations: 0, administration: 0 },
   },
   {
     id: "bookkeeper",
@@ -63,7 +88,61 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [38_000, 52_000],
     description: "Handles day-to-day transaction recording, invoicing, and bill payment.",
     delegates: "The bookkeeping you're currently doing yourself, including the error risk of doing it in spare time.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("accounting"),
+    defaultAllocation: { accounting: 100, purchasing: 0, sales: 0, operations: 0, administration: 0 },
   },
+
+  // --- Startup generalists: broad, moderate capability, allocation split across several functions. ---
+  {
+    id: "business-generalist",
+    title: "Business Generalist",
+    department: "administration",
+    tier: 1,
+    salaryRange: [34_000, 46_000],
+    description: "A jack-of-several-trades early hire who can cover accounting, purchasing, sales, and operations coordination at a moderate level each — the classic first employee for a company too small to justify a specialist in any one function yet.",
+    delegates: "A meaningful slice of whichever functions you assign them to — spreads your own workload thin across several areas instead of freeing up just one.",
+    roleClass: "generalist",
+    functionAffinity: { accounting: 0.8, purchasing: 0.8, sales: 0.75, operations: 0.75, administration: 0.85 },
+    defaultAllocation: { accounting: 20, purchasing: 20, sales: 20, operations: 20, administration: 20 },
+  },
+  {
+    id: "operations-associate",
+    title: "Operations Associate",
+    department: "administration",
+    tier: 1,
+    salaryRange: [33_000, 44_000],
+    description: "Coordinates day-to-day operations and general administration, with enough range to help with purchasing or sales when things get busy.",
+    delegates: "Operational coordination and admin overhead — frees you from the logistics of just keeping things running.",
+    roleClass: "generalist",
+    functionAffinity: { accounting: 0.5, purchasing: 0.6, sales: 0.4, operations: 1.0, administration: 0.85 },
+    defaultAllocation: { accounting: 5, purchasing: 15, sales: 10, operations: 45, administration: 25 },
+  },
+  {
+    id: "sales-operations-associate",
+    title: "Sales & Operations Associate",
+    department: "administration",
+    tier: 1,
+    salaryRange: [35_000, 47_000],
+    description: "Splits time between chasing sales opportunities and helping keep production coordinated — a natural fit for a company whose biggest constraint is finding customers for what it can already make.",
+    delegates: "Sales prospecting and some operational coordination, without committing to a full-time rep yet.",
+    roleClass: "generalist",
+    functionAffinity: { accounting: 0.4, purchasing: 0.5, sales: 1.0, operations: 0.75, administration: 0.6 },
+    defaultAllocation: { accounting: 5, purchasing: 10, sales: 40, operations: 30, administration: 15 },
+  },
+  {
+    id: "finance-admin-associate",
+    title: "Finance & Administration Associate",
+    department: "administration",
+    tier: 1,
+    salaryRange: [35_000, 47_000],
+    description: "Handles bookkeeping and general administration together — a natural fit once transaction volume is real but not yet enough to justify a dedicated bookkeeper.",
+    delegates: "Bookkeeping and administrative overhead, freeing up founder time without a full accounting hire.",
+    roleClass: "generalist",
+    functionAffinity: { accounting: 1.0, purchasing: 0.55, sales: 0.35, operations: 0.4, administration: 0.9 },
+    defaultAllocation: { accounting: 40, purchasing: 15, sales: 5, operations: 10, administration: 30 },
+  },
+
   {
     id: "plant-manager",
     title: "Plant Manager",
@@ -73,6 +152,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [65_000, 90_000],
     description: "Runs the production floor day-to-day — oversees production, maintenance, and quality staff and lifts their overall effectiveness.",
     delegates: "Direct oversight of the entire production floor, freeing you from daily plant supervision.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("operations", 1.15, 0.2),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 0, operations: 90, administration: 10 },
   },
   {
     id: "controller",
@@ -83,6 +165,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [70_000, 95_000],
     description: "Owns the full accounting function and financial reporting, supervising bookkeeping staff.",
     delegates: "Financial oversight and reporting — the last piece of accounting you'd otherwise touch personally.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("accounting", 1.2, 0.2),
+    defaultAllocation: { accounting: 90, purchasing: 0, sales: 0, operations: 0, administration: 10 },
   },
   {
     id: "sales-manager",
@@ -93,6 +178,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [68_000, 92_000],
     description: "Runs the sales function — sets territory/account priorities for reps and is accountable for the team's overall performance.",
     delegates: "Day-to-day sales management, freeing you from directing account strategy yourself.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("sales", 1.2, 0.2),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 90, operations: 0, administration: 10 },
   },
   {
     id: "purchasing-manager",
@@ -103,6 +191,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [66_000, 90_000],
     description: "Owns supplier strategy — negotiates larger contracts and directs purchasing agents.",
     delegates: "Supplier strategy and negotiation oversight, beyond what a single purchasing agent handles alone.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("purchasing", 1.2, 0.2),
+    defaultAllocation: { accounting: 0, purchasing: 90, sales: 0, operations: 0, administration: 10 },
   },
   {
     id: "regional-operations-manager",
@@ -113,6 +204,9 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     salaryRange: [95_000, 135_000],
     description: "Oversees a group of plant/functional managers across facilities and markets instead of running one department directly — the layer that appears once the company outgrows a single person's span of control over its managers.",
     delegates: "Direct oversight of your other managers, freeing you from personally coordinating every plant/sales/purchasing manager as the company spreads across facilities and regions.",
+    roleClass: "specialist",
+    functionAffinity: specialistAffinity("administration", 1.0, 0.25),
+    defaultAllocation: { accounting: 0, purchasing: 0, sales: 0, operations: 0, administration: 100 },
   },
 ];
 

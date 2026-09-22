@@ -114,7 +114,7 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
         isPrimary: true,
       },
     ],
-    founderAllocation: { production: 0.4, purchasing: 0.2, sales: 0.2, accounting: 0.2 },
+    founderAllocation: { production: 0.35, purchasing: 0.2, sales: 0.2, accounting: 0.15, administration: 0.1 },
     kpiHistory: [],
     historyLog: [
       {

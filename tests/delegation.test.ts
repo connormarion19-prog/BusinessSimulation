@@ -35,10 +35,16 @@ const WEAK_TRAITS: EmployeeTraits = {
   initiative: 40, judgment: 35, leadership: 30, learningAbility: 40, adaptability: 40, organization: 35,
 };
 
+function defaultAllocationForDepartment(department: Employee["department"]): Employee["allocation"] {
+  const fn = department === "purchasing" ? "purchasing" : department === "sales" ? "sales" : department === "accounting" ? "accounting" : department === "production" || department === "quality" || department === "maintenance" ? "operations" : "administration";
+  return { accounting: 0, purchasing: 0, sales: 0, operations: 0, administration: 0, [fn]: 100 };
+}
+
 function makeEmployee(id: string, roleId: string, department: Employee["department"], traits: EmployeeTraits, overrides: Partial<Employee> = {}): Employee {
   return {
     id, name: `Test ${id}`, age: 40, location: "Regional", roleId, title: roleId, department,
     hireWeek: 0, salaryWeekly: 900, managerId: null, facilityId: null, traits,
+    allocation: defaultAllocationForDepartment(department),
     education: { degree: "Bachelor's Degree", field: "Business", school: "State University" },
     priorEmployers: [], status: "active", morale: 60, fatigue: 10, performanceHistory: [],
     cumulativeErrors: 0, cumulativeTasksCompleted: 0, lastRaiseWeek: null, onPip: false,
@@ -119,7 +125,7 @@ describe("delegated purchasing", () => {
     const pending = game.company.managerDecisionLog.find((d) => d.domain === "purchasing" && d.status === "pending-approval");
     expect(pending).toBeDefined();
 
-    const approved = approveManagerDecision(game.company, pending!.id, game.week, game.currentDate);
+    const approved = approveManagerDecision(game.company, industry.employeeRoles, pending!.id, game.week, game.currentDate);
     expect(approved).toBe(true);
     const postApproval = game.company.suppliers.map((s) => s.purchaseAllocationPct);
     expect(postApproval).not.toEqual(before.map((b) => b.pct));

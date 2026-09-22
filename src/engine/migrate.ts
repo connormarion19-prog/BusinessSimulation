@@ -59,6 +59,18 @@ export function migrateGameState(raw: unknown): GameState {
   for (const employee of company.employees as Record<string, unknown>[]) {
     if (employee.facilityId === undefined) employee.facilityId = facilities[0]?.id ?? null;
     if (employee.managerId === undefined) employee.managerId = null;
+    if (!employee.allocation || typeof employee.allocation !== "object") {
+      const dept = employee.department as string;
+      const fn = dept === "purchasing" ? "purchasing" : dept === "sales" ? "sales" : dept === "accounting" ? "accounting" : dept === "production" || dept === "quality" || dept === "maintenance" ? "operations" : "administration";
+      employee.allocation = { accounting: 0, purchasing: 0, sales: 0, operations: 0, administration: 0, [fn]: 100 };
+    }
+  }
+
+  if (!company.founderAllocation) {
+    company.founderAllocation = { production: 0.4, purchasing: 0.2, sales: 0.2, accounting: 0.2, administration: 0 };
+  } else {
+    const fa = company.founderAllocation as Record<string, unknown>;
+    if (typeof fa.administration !== "number") fa.administration = 0;
   }
 
   if (!company.delegation) company.delegation = defaultDelegationSettings();

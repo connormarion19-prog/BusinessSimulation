@@ -98,6 +98,7 @@ export function promoteEmployeeToManager(
   employee.title = managerRole.title;
   employee.department = managerRole.department;
   employee.managerId = null;
+  employee.allocation = { ...managerRole.defaultAllocation };
   const reportCount = assignUnmanagedReports(company, employee.id, managedDepartment);
 
   company.historyLog.push({

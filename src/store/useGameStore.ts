@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AuthorityLevel, FacilityOwnershipType, GameState } from "../types/core";
-import type { Employee } from "../types/employee";
+import type { Employee, FounderAllocation, WorkFunction } from "../types/employee";
 import type { NewCompanyParams } from "../types/industry";
 import { createNewGame } from "../engine/newGame";
 import { advanceWeek as advanceWeekEngine } from "../engine/clock";
@@ -37,7 +37,8 @@ interface GameStoreState {
   addSupplier: (supplierTemplateId: string) => void;
   setSupplierAllocation: (supplierId: string, pct: number) => void;
   removeSupplier: (supplierId: string) => void;
-  setFounderAllocation: (allocation: { production: number; purchasing: number; sales: number; accounting: number }) => void;
+  setFounderAllocation: (allocation: FounderAllocation) => void;
+  setEmployeeAllocation: (employeeId: string, allocation: Record<WorkFunction, number>) => void;
   postJobOpening: (roleId: string, salaryMin: number, salaryMax: number) => void;
   askInterviewQuestion: (openingId: string, candidateId: string, questionId: string) => void;
   runReferenceCheck: (openingId: string, candidateId: string) => void;
@@ -166,6 +167,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ game: next });
   },
 
+  setEmployeeAllocation: (employeeId, allocation) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    const employee = next.company.employees.find((e) => e.id === employeeId);
+    if (!employee) return;
+    employee.allocation = allocation;
+    set({ game: next });
+  },
+
   postJobOpening: (roleId, salaryMin, salaryMax) => {
     const { game } = get();
     if (!game) return;
@@ -227,7 +238,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const next = clone(game);
     const opening = next.company.openPositions.find((o) => o.id === openingId);
     const candidate = opening?.candidates.find((c) => c.id === candidateId);
-    if (!opening || !candidate) return;
+    const role = getIndustryDefinition(next.company.industryId)?.employeeRoles.find((r) => r.id === opening?.roleId);
+    if (!opening || !candidate || !role) return;
 
     const facilityBound = opening.roleId === "production-worker" || opening.roleId === "machine-operator";
 
@@ -243,6 +255,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       salaryWeekly,
       managerId: null,
       facilityId: facilityBound ? (facilityId ?? next.company.facilities[0]?.id ?? null) : null,
+      allocation: { ...role.defaultAllocation },
       traits: candidate.traits,
       education: candidate.education,
       priorEmployers: candidate.priorEmployers,
@@ -364,7 +377,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const { game } = get();
     if (!game) return;
     const next = clone(game);
-    if (!approveManagerDecisionEngine(next.company, decisionId, next.week, next.currentDate)) return;
+    const industry = getIndustryDefinition(next.company.industryId);
+    if (!industry) return;
+    if (!approveManagerDecisionEngine(next.company, industry.employeeRoles, decisionId, next.week, next.currentDate)) return;
     set({ game: next });
   },
 

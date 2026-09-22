@@ -159,7 +159,7 @@ export function runDelegatedHiring(company: Company, roles: EmployeeRoleTemplate
       proposal: { openingId: opening.id, candidateId: top.candidate.id, salaryWeekly: top.candidate.askingSalaryWeekly },
     };
 
-    if (withinAuthority) applyHireProposal(company, opening.id, top.candidate.id, top.candidate.askingSalaryWeekly, week, date, manager.id);
+    if (withinAuthority) applyHireProposal(company, roles, opening.id, top.candidate.id, top.candidate.askingSalaryWeekly, week, date, manager.id);
     entries.push(entry);
   }
   return entries;
@@ -167,6 +167,7 @@ export function runDelegatedHiring(company: Company, roles: EmployeeRoleTemplate
 
 export function applyHireProposal(
   company: Company,
+  roles: EmployeeRoleTemplate[],
   openingId: string,
   candidateId: string,
   salaryWeekly: number,
@@ -176,11 +177,13 @@ export function applyHireProposal(
 ): boolean {
   const opening = company.openPositions.find((o) => o.id === openingId);
   const candidate = opening?.candidates.find((c) => c.id === candidateId);
-  if (!opening || !candidate) return false;
+  const role = roles.find((r) => r.id === opening?.roleId);
+  if (!opening || !candidate || !role) return false;
   const facilityBound = opening.roleId === "production-worker" || opening.roleId === "machine-operator";
   const employee = buildEmployeeFromCandidate({
     candidate,
     opening,
+    role,
     week,
     salaryWeekly,
     facilityId: facilityBound ? (company.facilities[0]?.id ?? null) : null,
@@ -198,13 +201,13 @@ export function applyHireProposal(
   return true;
 }
 
-export function approveManagerDecision(company: Company, decisionId: string, week: number, date: string): boolean {
+export function approveManagerDecision(company: Company, roles: EmployeeRoleTemplate[], decisionId: string, week: number, date: string): boolean {
   const entry = company.managerDecisionLog.find((d) => d.id === decisionId && d.status === "pending-approval");
   if (!entry || !entry.proposal) return false;
   if (entry.domain === "purchasing" && entry.proposal.supplierAllocations) {
     applyPurchasingProposal(company, entry.proposal.supplierAllocations);
   } else if (entry.domain === "hiring" && entry.proposal.openingId && entry.proposal.candidateId && entry.proposal.salaryWeekly != null) {
-    applyHireProposal(company, entry.proposal.openingId, entry.proposal.candidateId, entry.proposal.salaryWeekly, week, date, entry.managerId);
+    applyHireProposal(company, roles, entry.proposal.openingId, entry.proposal.candidateId, entry.proposal.salaryWeekly, week, date, entry.managerId);
   }
   entry.status = "player-approved";
   return true;

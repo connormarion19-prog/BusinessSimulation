@@ -51,6 +51,7 @@ function makeProductionEmployee(id: string, facilityId: string): Employee {
     salaryWeekly: 750,
     managerId: null,
     facilityId,
+    allocation: { accounting: 0, purchasing: 0, sales: 0, operations: 100, administration: 0 },
     traits: { ...NEUTRAL_TRAITS },
     education: { degree: "Associate's Degree", field: "Industrial Engineering", school: "Community College" },
     priorEmployers: [],

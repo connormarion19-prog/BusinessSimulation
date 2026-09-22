@@ -79,6 +79,7 @@ describe("full simulation integrity", () => {
       salaryWeekly: candidate.askingSalaryWeekly,
       managerId: null,
       facilityId: game.company.facilities[0].id,
+      allocation: { ...role.defaultAllocation },
       traits: candidate.traits,
       education: candidate.education,
       priorEmployers: candidate.priorEmployers,

@@ -38,6 +38,11 @@ const NEUTRAL_TRAITS: EmployeeTraits = {
   organization: 60,
 };
 
+function defaultAllocationForDepartment(department: Employee["department"]): Employee["allocation"] {
+  const fn = department === "purchasing" ? "purchasing" : department === "sales" ? "sales" : department === "accounting" ? "accounting" : department === "production" || department === "quality" || department === "maintenance" ? "operations" : "administration";
+  return { accounting: 0, purchasing: 0, sales: 0, operations: 0, administration: 0, [fn]: 100 };
+}
+
 function makeEmployee(company: Company, id: string, roleId: string, department: Employee["department"], overrides: Partial<Employee> = {}): Employee {
   return {
     id,
@@ -51,6 +56,7 @@ function makeEmployee(company: Company, id: string, roleId: string, department: 
     salaryWeekly: 800,
     managerId: null,
     facilityId: company.facilities[0]?.id ?? null,
+    allocation: defaultAllocationForDepartment(department),
     traits: { ...NEUTRAL_TRAITS },
     education: { degree: "Bachelor's Degree", field: "Business", school: "State University" },
     priorEmployers: [],

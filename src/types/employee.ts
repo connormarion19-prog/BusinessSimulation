@@ -1,4 +1,11 @@
-export type Department = "production" | "purchasing" | "sales" | "accounting" | "management" | "quality" | "maintenance";
+export type Department = "production" | "purchasing" | "sales" | "accounting" | "management" | "quality" | "maintenance" | "administration";
+
+/**
+ * The five buckets weekly working capacity is allocated across — orthogonal to `Department`
+ * (which is org-chart/reporting-line membership). A specialist's capacity is concentrated in
+ * one function; a generalist's is deliberately spread across several. See engine/workload.ts.
+ */
+export type WorkFunction = "accounting" | "purchasing" | "sales" | "operations" | "administration";
 
 export interface EmployeeRoleTemplate {
   id: string;
@@ -11,6 +18,12 @@ export interface EmployeeRoleTemplate {
   delegates: string;
   /** For tier-2+ roles: which operational department this manager oversees (their own `department` is usually "management"). */
   managesDepartment?: Department;
+  /** Generalists spread capacity and capability broadly; specialists concentrate both. Purely informational/UI framing — functionAffinity is what actually drives the math. */
+  roleClass: "generalist" | "specialist";
+  /** 0-1.3ish multiplier applied to this role's trait-derived skill in each function — a specialist is high in one, low elsewhere; a generalist is moderate everywhere. */
+  functionAffinity: Record<WorkFunction, number>;
+  /** Starting weekly-capacity allocation (percent, should sum to ~100) a new hire in this role is given by default; the player can rebalance it afterward. */
+  defaultAllocation: Record<WorkFunction, number>;
 }
 
 /**
@@ -68,6 +81,8 @@ export interface Employee {
   managerId: string | null; // null = reports directly to founder
   /** Which facility this employee physically works at. Only meaningful for facility-bound roles (production-worker, machine-operator); null for company-wide roles. */
   facilityId: string | null;
+  /** Weekly working-capacity allocation across functions, in percent. A specialist's is concentrated in one function by default; a generalist's spans several. Sums over 100 are allowed but penalized — see engine/workload.ts. */
+  allocation: Record<WorkFunction, number>;
   traits: EmployeeTraits;
   education: EmployeeEducation;
   priorEmployers: PriorEmployer[];
@@ -123,4 +138,6 @@ export interface FounderAllocation {
   purchasing: number;
   sales: number;
   accounting: number;
+  /** Time spent on strategy/hiring/financing/expansion — not directly operational, but real: time here is time not spent personally covering a function. */
+  administration: number;
 }
