@@ -32,6 +32,7 @@ export function makeEntry(params: {
   source: string;
   lines: JournalLine[];
   cashFlowCategory?: JournalEntry["cashFlowCategory"];
+  productId?: string;
 }): JournalEntry {
   if (!linesBalance(params.lines)) {
     const debits = params.lines.reduce((s, l) => s + l.debit, 0);
@@ -48,6 +49,7 @@ export function makeEntry(params: {
     source: params.source,
     lines: params.lines,
     cashFlowCategory: params.cashFlowCategory,
+    productId: params.productId,
   };
 }
 

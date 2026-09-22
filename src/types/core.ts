@@ -85,6 +85,58 @@ export interface CustomerAccount {
   atRisk: boolean;
 }
 
+export type ProspectStatus = "new" | "researched" | "contacted" | "won" | "lost";
+
+/** What the player actually sees before pursuing a prospect — always a range/estimate, never the hidden ground truth. */
+export interface ProspectEstimate {
+  annualVolumeRangeUnits: [number, number];
+  willingnessToPayRangePerUnit: [number, number];
+  probabilityOfInterestPct: number;
+}
+
+/**
+ * A potential customer the company has not yet won. Nothing about a prospect is committed —
+ * the player must research, pitch, and close them (or lose them) for a real CustomerAccount to
+ * exist. `estimate` is what the player sees; the `true*` fields are hidden ground truth that
+ * research narrows toward and a pitch's outcome is actually computed from.
+ */
+export interface Prospect {
+  id: string;
+  name: string;
+  location: string;
+  locationId: string;
+  industryNote: string;
+  segment: string;
+  estimate: ProspectEstimate;
+  trueAnnualVolumeUnits: number;
+  trueWillingnessToPayPerUnit: number;
+  truePriceSensitivity: number;
+  trueQualityExpectation: number;
+  truePaymentTermsDays: number;
+  status: ProspectStatus;
+  researched: boolean;
+  discoveredWeek: number;
+  lastContactWeek: number | null;
+  contactAttempts: number;
+  lostReason?: string;
+  wonCustomerId?: string;
+}
+
+export interface CustomerPitch {
+  productId: string;
+  priceOffered: number;
+  volumeCommitmentUnits: number;
+  paymentTermsDaysOffered: number;
+  contractLengthWeeks: number;
+}
+
+export interface PitchResult {
+  ok: boolean;
+  won: boolean;
+  reason: string;
+  entries: JournalEntry[];
+}
+
 export interface SupplierRelationship {
   id: string;
   name: string;
@@ -243,7 +295,11 @@ export type DecisionKind =
   | "management-overload"
   | "manager-decision-pending"
   | "market-entry-ready"
-  | "warehouse-restock-needed";
+  | "warehouse-restock-needed"
+  | "no-suppliers"
+  | "no-customers"
+  | "prospects-waiting"
+  | "losing-money";
 
 export interface PendingDecision {
   id: string;
@@ -287,6 +343,7 @@ export interface Company {
   managerDecisionLog: ManagerDecisionLogEntry[];
   enteredMarkets: MarketEntry[];
   inTransitShipments: InTransitShipment[];
+  prospects: Prospect[];
 }
 
 export interface EconomyState {

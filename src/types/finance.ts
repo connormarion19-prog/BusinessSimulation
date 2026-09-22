@@ -24,6 +24,8 @@ export interface JournalEntry {
   source: string; // e.g. "payroll", "sale", "purchase", "loan-draw", "depreciation"
   lines: JournalLine[];
   cashFlowCategory?: CashFlowCategory;
+  /** Optional reporting metadata — never affects balancing. Lets drill-down reports attribute an entry to the product it belongs to without parsing memo text. */
+  productId?: string;
 }
 
 export interface Loan {

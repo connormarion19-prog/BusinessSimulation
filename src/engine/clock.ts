@@ -16,6 +16,8 @@ import { processFacilityConstruction } from "./facilities";
 import { processMarketEntries } from "./expansion";
 import { processInTransitShipments } from "./logistics";
 import { driftRegionalMarket, syncHomeRegion } from "./geography";
+import { refreshProspectPool } from "./prospecting";
+import { computeCashRunwayWarning, explainLoss } from "./financialExplain";
 import { LOCATIONS_BY_ID } from "../data/locations";
 
 function determineStage(employeeCount: number): GameState["company"]["stage"] {
@@ -78,6 +80,7 @@ export function advanceWeek(state: GameState): GameState {
     if (locId === state.company.locationId) continue;
     state.market.regions[locId] = driftRegionalMarket(state.market.regions[locId], state.economy, state.competitors, state.rng);
   }
+  refreshProspectPool(state.company, industry.customerSegments, newWeek, state.rng);
 
   // Loan amortization (generic across industries)
   for (const loan of state.company.loans) {
@@ -179,6 +182,29 @@ export function advanceWeek(state: GameState): GameState {
 
   // Pending decisions
   const decisions: PendingDecision[] = [];
+  if (state.company.suppliers.length === 0) {
+    decisions.push({
+      id: "dec-no-suppliers",
+      kind: "no-suppliers",
+      week: newWeek,
+      title: "You have no raw-material supplier",
+      detail: "Production can't run without a source of raw materials. Visit Suppliers to establish your first relationship.",
+      severity: "urgent",
+    });
+  }
+  if (state.company.customers.length === 0) {
+    const uncontacted = state.company.prospects.filter((p) => p.status === "new" || p.status === "researched").length;
+    decisions.push({
+      id: "dec-no-customers",
+      kind: "no-customers",
+      week: newWeek,
+      title: "You have no contracted customers yet",
+      detail: uncontacted > 0
+        ? `Spot-market sales can still happen once you're producing, but ${uncontacted} prospect(s) are waiting to be pitched for real contracted revenue — see Customers.`
+        : "Spot-market sales can still happen once you're producing, but real contracted revenue means winning customers — see Customers.",
+      severity: "warning",
+    });
+  }
   const openingIdsAwaitingManagerApproval = new Set(
     state.company.managerDecisionLog
       .filter((d) => d.status === "pending-approval" && d.domain === "hiring")
@@ -275,13 +301,25 @@ export function advanceWeek(state: GameState): GameState {
   }
   const weeklyBurnEstimate = finalIncomeStatement.totalOperatingExpenses + finalIncomeStatement.cogs;
   if (weeklyBurnEstimate > 0 && cash < weeklyBurnEstimate * 3) {
+    const runway = computeCashRunwayWarning(state.company, newWeek);
     decisions.push({
       id: "dec-cash",
       kind: "cash-warning",
       week: newWeek,
       title: "Cash reserves are thin",
-      detail: `At the current burn rate, you have roughly ${Math.max(0, Math.round(cash / Math.max(1, weeklyBurnEstimate)))} week(s) of cash on hand.`,
+      detail: runway.narrative,
       severity: cash < 0 ? "urgent" : "warning",
+    });
+  }
+  if (finalIncomeStatement.netIncome < -50) {
+    const loss = explainLoss(state.company, newWeek);
+    decisions.push({
+      id: "dec-losing-money",
+      kind: "losing-money",
+      week: newWeek,
+      title: "The company lost money this week",
+      detail: loss.narrative,
+      severity: finalIncomeStatement.netIncome < -500 ? "urgent" : "warning",
     });
   }
   state.pendingDecisions = decisions;

@@ -14,7 +14,8 @@ export function addSupplierToCompany(
   if (!template) return false;
   if (company.suppliers.some((s) => s.name === template.name)) return false;
 
-  const newShare = 0.25;
+  const isFirstSupplier = company.suppliers.length === 0;
+  const newShare = isFirstSupplier ? 1 : 0.25;
   for (const s of company.suppliers) {
     s.purchaseAllocationPct = round2(s.purchaseAllocationPct * (1 - newShare));
   }
@@ -29,13 +30,15 @@ export function addSupplierToCompany(
     paymentTermsDays: template.paymentTermsDays,
     leadTimeWeeks: template.leadTimeWeeks,
     purchaseAllocationPct: newShare,
-    isPrimary: false,
+    isPrimary: isFirstSupplier,
   });
   company.historyLog.push({
     week,
     date,
     headline: `Added ${template.name} as a supplier`,
-    detail: `Sourcing ${Math.round(newShare * 100)}% of purchases from this supplier to diversify supply risk.`,
+    detail: isFirstSupplier
+      ? "Your first raw-material source — production can now actually run."
+      : `Sourcing ${Math.round(newShare * 100)}% of purchases from this supplier to diversify supply risk.`,
     category: "finance",
   });
   return true;

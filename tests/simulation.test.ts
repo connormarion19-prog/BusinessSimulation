@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNewGame } from "../src/engine/newGame";
+import { createTestGame } from "./testHelpers";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance } from "../src/engine/ledger";
 import { balanceSheetAsOf } from "../src/engine/reports";
@@ -27,7 +27,7 @@ function baseParams(overrides: Partial<NewCompanyParams> = {}): NewCompanyParams
 
 describe("full simulation integrity", () => {
   it("keeps the accounting identity intact across 40 simulated weeks", () => {
-    const game = createNewGame("paper-manufacturing", "Test Save", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test Save", baseParams());
 
     for (let i = 0; i < 40; i++) {
       advanceWeek(game);
@@ -52,14 +52,14 @@ describe("full simulation integrity", () => {
   });
 
   it("produces some production and sales activity by week 10", () => {
-    const game = createNewGame("paper-manufacturing", "Test Save", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test Save", baseParams());
     for (let i = 0; i < 10; i++) advanceWeek(game);
     const totalProduced = game.company.kpiHistory.reduce((s, k) => s + k.unitsProduced, 0);
     expect(totalProduced).toBeGreaterThan(0);
   });
 
   it("stays balanced after hiring an employee mid-simulation", () => {
-    const game = createNewGame("paper-manufacturing", "Test Save", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test Save", baseParams());
     for (let i = 0; i < 5; i++) advanceWeek(game);
 
     const industry = getIndustryDefinition("paper-manufacturing")!;
@@ -104,7 +104,7 @@ describe("full simulation integrity", () => {
   });
 
   it("supports a long-horizon save (5 simulated years) without drift or NaN", () => {
-    const game = createNewGame("paper-manufacturing", "Test Save", baseParams({ startingCash: 300_000, loanTerms: { principal: 300_000, annualRate: 0.084, termWeeks: 364, lender: "Test Bank" } }));
+    const game = createTestGame("paper-manufacturing", "Test Save", baseParams({ startingCash: 300_000, loanTerms: { principal: 300_000, annualRate: 0.084, termWeeks: 364, lender: "Test Bank" } }));
     for (let i = 0; i < 260; i++) {
       advanceWeek(game);
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNewGame } from "../src/engine/newGame";
+import { createTestGame } from "./testHelpers";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance } from "../src/engine/ledger";
 import { getIndustryDefinition } from "../src/industries/registry";
@@ -56,7 +56,7 @@ function makeEmployee(id: string, roleId: string, department: Employee["departme
 
 describe("company workload model", () => {
   it("scales up as the company grows (more employees/facilities/products/customers/suppliers)", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const tinyWorkload = computeCompanyWorkload(game.company);
 
@@ -81,7 +81,7 @@ describe("company workload model", () => {
   });
 
   it("is deterministic — same company state always produces the same workload", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const a = computeCompanyWorkload(game.company);
     const b = computeCompanyWorkload(game.company);
     expect(a).toEqual(b);
@@ -90,7 +90,7 @@ describe("company workload model", () => {
 
 describe("capacity and staffing gaps", () => {
   it("counts the founder's declared allocation as available capacity when there are no employees", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const capacity = computeAvailableCapacity(game.company, industry.employeeRoles);
     const founderAlloc = founderFunctionAllocation(game.company.founderAllocation);
@@ -99,7 +99,7 @@ describe("capacity and staffing gaps", () => {
   });
 
   it("hiring an employee adds their raw allocation on top of the founder's", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const before = computeAvailableCapacity(game.company, industry.employeeRoles);
     game.company.employees.push(makeEmployee("e1", "bookkeeper", "accounting", { accounting: 100, purchasing: 0, sales: 0, operations: 0, administration: 0 }));
@@ -108,7 +108,7 @@ describe("capacity and staffing gaps", () => {
   });
 
   it("firing (terminating) an employee removes their capacity", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const emp = makeEmployee("e1", "bookkeeper", "accounting", { accounting: 100, purchasing: 0, sales: 0, operations: 0, administration: 0 });
     game.company.employees.push(emp);
@@ -129,7 +129,7 @@ describe("capacity and staffing gaps", () => {
   });
 
   it("computes a real gap (required - available) per function from actual company state", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const gaps = computeStaffingGaps(game.company, industry.employeeRoles);
     for (const fn of ["accounting", "purchasing", "sales", "operations", "administration"] as const) {
@@ -210,7 +210,7 @@ describe("founder capacity integration", () => {
 
 describe("hiring impact preview", () => {
   it("a generalist's preview spreads capacity across several functions", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const preview = previewHireImpact(game.company, industry.employeeRoles, "business-generalist")!;
     const functionsWithCapacity = Object.values(preview.capacityAdded).filter((v) => v > 0).length;
@@ -218,7 +218,7 @@ describe("hiring impact preview", () => {
   });
 
   it("a specialist's preview concentrates capacity in one function", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const preview = previewHireImpact(game.company, industry.employeeRoles, "bookkeeper")!;
     const total = Object.values(preview.capacityAdded).reduce((s, v) => s + v, 0);
@@ -226,7 +226,7 @@ describe("hiring impact preview", () => {
   });
 
   it("returns null for an unknown role", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     expect(previewHireImpact(game.company, industry.employeeRoles, "not-a-real-role")).toBeNull();
   });
@@ -234,7 +234,7 @@ describe("hiring impact preview", () => {
 
 describe("promotion effects on allocation", () => {
   it("promoting an employee resets their allocation to the new manager role's default", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const worker = makeEmployee("w1", "production-worker", "production", { accounting: 0, purchasing: 0, sales: 0, operations: 100, administration: 0 });
     game.company.employees.push(worker);
@@ -247,7 +247,7 @@ describe("promotion effects on allocation", () => {
 
 describe("staffing changes actually affect the weekly simulation", () => {
   it("hiring a business generalist changes company capacity and long-run outcomes stay balanced for 30 weeks", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const before = computeAvailableCapacity(game.company, industry.employeeRoles);
 
@@ -268,8 +268,8 @@ describe("staffing changes actually affect the weekly simulation", () => {
   });
 
   it("reallocating an employee's time changes what they actually contribute to the simulation", () => {
-    const gameA = createNewGame("paper-manufacturing", "Test", baseParams());
-    const gameB = createNewGame("paper-manufacturing", "Test", baseParams());
+    const gameA = createTestGame("paper-manufacturing", "Test", baseParams());
+    const gameB = createTestGame("paper-manufacturing", "Test", baseParams());
     // Same seed-independent setup: give both an identical generalist, but allocate very differently.
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const role = industry.employeeRoles.find((r) => r.id === "sales-operations-associate")!;

@@ -78,6 +78,7 @@ export function migrateGameState(raw: unknown): GameState {
   if (!company.rawMaterialInventoryUnits && company.rawMaterialInventoryUnits !== 0) company.rawMaterialInventoryUnits = 0;
   if (!Array.isArray(company.enteredMarkets)) company.enteredMarkets = [];
   if (!Array.isArray(company.inTransitShipments)) company.inTransitShipments = [];
+  if (!Array.isArray(company.prospects)) company.prospects = [];
 
   const market = state.market as unknown as Record<string, unknown>;
   if (market && (!market.regions || typeof market.regions !== "object")) {

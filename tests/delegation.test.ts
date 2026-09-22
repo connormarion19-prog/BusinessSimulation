@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNewGame } from "../src/engine/newGame";
+import { createTestGame } from "./testHelpers";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance } from "../src/engine/ledger";
 import { computeManagerSpanCapacity, computeSpanOverloadFactor, directReportsOf } from "../src/engine/management";
@@ -70,7 +70,7 @@ describe("manager span of control", () => {
 
 describe("delegated purchasing", () => {
   it("does nothing while authority is player-approval (default) — manual mode is unaffected", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "discount-pulp-broker", game.week, game.currentDate);
     game.company.employees.push(makeEmployee("pm-1", "purchasing-manager", "management", SKILLED_TRAITS));
@@ -84,7 +84,7 @@ describe("delegated purchasing", () => {
   });
 
   it("with full authority, gradually reallocates toward the better-scoring supplier and logs why", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "premium-northern-pulp", game.week, game.currentDate);
     // Make the second supplier clearly better: cheaper AND more reliable than the first.
@@ -107,7 +107,7 @@ describe("delegated purchasing", () => {
   });
 
   it("queues a proposal for player approval instead of applying it when the shift exceeds the threshold", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "premium-northern-pulp", game.week, game.currentDate);
     game.company.suppliers[0].pricePerUnit = 220;
@@ -134,7 +134,7 @@ describe("delegated purchasing", () => {
 
 describe("delegated hiring", () => {
   it("does nothing while authority is player-approval (default) — manual hiring flow is unaffected", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     game.company.employees.push(makeEmployee("sm-1", "sales-manager", "management", SKILLED_TRAITS));
     const role = industry.employeeRoles.find((r) => r.id === "sales-rep")!;
@@ -156,7 +156,7 @@ describe("delegated hiring", () => {
   });
 
   it("with full authority, the department manager fills the opening and logs why", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     game.company.employees.push(makeEmployee("sm-1", "sales-manager", "management", SKILLED_TRAITS));
     const role = industry.employeeRoles.find((r) => r.id === "sales-rep")!;
@@ -194,7 +194,7 @@ describe("delegated hiring", () => {
   });
 
   it("queues the hire for approval when the salary exceeds the manager's threshold, and rejection leaves the opening open", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     game.company.employees.push(makeEmployee("sm-1", "sales-manager", "management", SKILLED_TRAITS));
     const role = industry.employeeRoles.find((r) => r.id === "sales-rep")!;
@@ -226,7 +226,7 @@ describe("delegated hiring", () => {
 
 describe("delegation stays balanced over a long run", () => {
   it("keeps the accounting identity intact with both domains on full authority for 26 weeks", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "discount-pulp-broker", game.week, game.currentDate);
     game.company.employees.push(makeEmployee("pm-1", "purchasing-manager", "management", SKILLED_TRAITS));

@@ -301,6 +301,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
           source: "production-materials",
           lines: [dr("finished-goods", materialsCostConsumed), cr("raw-materials", materialsCostConsumed)],
           cashFlowCategory: "noncash",
+          productId: product.id,
         }),
       );
       product.fgValueMaterials = round2(product.fgValueMaterials + materialsCostConsumed);
@@ -586,16 +587,16 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
 
         const destinationNote = channel.locationId !== homeLocationId ? ` (${LOCATIONS_BY_ID[channel.locationId]?.city ?? channel.locationId})` : "";
         entries.push(
-          makeEntry({ week, date, memo: `Sales of ${product.name}${destinationNote}`, source: "sale", lines: [dr("ar", grossRevenue), cr("sales-revenue", grossRevenue)], cashFlowCategory: "operating" }),
+          makeEntry({ week, date, memo: `Sales of ${product.name}${destinationNote}`, source: "sale", lines: [dr("ar", grossRevenue), cr("sales-revenue", grossRevenue)], cashFlowCategory: "operating", productId: product.id }),
         );
         if (commission > 0) {
           entries.push(
-            makeEntry({ week, date, memo: `Distributor commission — ${product.name}${destinationNote}`, source: "distributor-commission", lines: [dr("distributor-commission-expense", commission), cr("ar", commission)], cashFlowCategory: "operating" }),
+            makeEntry({ week, date, memo: `Distributor commission — ${product.name}${destinationNote}`, source: "distributor-commission", lines: [dr("distributor-commission-expense", commission), cr("ar", commission)], cashFlowCategory: "operating", productId: product.id }),
           );
         }
         if (freight > 0) {
           entries.push(
-            makeEntry({ week, date, memo: `Freight — ${product.name}${destinationNote}`, source: "freight", lines: [dr("freight-expense", freight), cr("cash", freight)], cashFlowCategory: "operating" }),
+            makeEntry({ week, date, memo: `Freight — ${product.name}${destinationNote}`, source: "freight", lines: [dr("freight-expense", freight), cr("cash", freight)], cashFlowCategory: "operating", productId: product.id }),
           );
         }
         entries.push(
@@ -606,6 +607,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
             source: "cogs",
             lines: [dr("cogs-materials", costMat), dr("cogs-labor", costLabor), dr("cogs-overhead", costOh), cr("finished-goods", costOfSold)],
             cashFlowCategory: "noncash",
+            productId: product.id,
           }),
         );
 

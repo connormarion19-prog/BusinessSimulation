@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNewGame } from "../src/engine/newGame";
+import { createTestGame } from "./testHelpers";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance, accountBalance } from "../src/engine/ledger";
 import { balanceSheetAsOf } from "../src/engine/reports";
@@ -71,7 +71,7 @@ function makeProductionEmployee(id: string, facilityId: string): Employee {
 
 describe("facility ownership & financing", () => {
   it("purchasing a facility in cash books it to PP&E with no new loan", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const loansBefore = game.company.loans.length;
     const result = openFacilityForCompany(game.company, industry, "small-job-shop", "or-portland", game.week, game.currentDate, "purchase", "cash");
@@ -86,7 +86,7 @@ describe("facility ownership & financing", () => {
   });
 
   it("purchasing with loan financing draws a real amortizing note", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const loansBefore = game.company.loans.length;
     const result = openFacilityForCompany(game.company, industry, "small-job-shop", "or-portland", game.week, game.currentDate, "purchase", "loan");
@@ -100,7 +100,7 @@ describe("facility ownership & financing", () => {
   });
 
   it("a facility under construction contributes no capacity until it completes, then converts to PP&E", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const result = openFacilityForCompany(game.company, industry, "small-job-shop", "tx-tyler", game.week, game.currentDate, "construction", "cash");
     game.company.entries.push(...result.entries);
@@ -125,7 +125,7 @@ describe("facility ownership & financing", () => {
 
 describe("geographic market entry", () => {
   it("a remote entry becomes active after its ramp-up lag and generates attributed regional revenue", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const productId = game.company.products[0].id;
 
@@ -182,7 +182,7 @@ describe("geographic market entry", () => {
   });
 
   it("a warehouse entry opens a real distribution-center facility with zero production capacity", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const productId = game.company.products[0].id;
     const result = enterMarket(
@@ -205,7 +205,7 @@ describe("geographic market entry", () => {
   });
 
   it("refuses to double-enter the same market for the same product", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const productId = game.company.products[0].id;
     const params = { locationId: "pa-erie", productId, mode: "remote" as const };
@@ -216,7 +216,7 @@ describe("geographic market entry", () => {
   });
 
   it("exiting a market marks the entry exited and stops further ramp-up", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const productId = game.company.products[0].id;
     const result = enterMarket(
@@ -239,7 +239,7 @@ describe("geographic market entry", () => {
 
 describe("internal transfers & logistics", () => {
   it("transfers deduct source inventory immediately, book freight, and land at the destination after transit", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const product = game.company.products[0];
     const homeFacilityId = game.company.facilities[0].id;
@@ -268,7 +268,7 @@ describe("internal transfers & logistics", () => {
   });
 
   it("caps a transfer at the destination's remaining storage capacity", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const product = game.company.products[0];
     const homeFacilityId = game.company.facilities[0].id;
@@ -286,7 +286,7 @@ describe("internal transfers & logistics", () => {
   });
 
   it("refuses a transfer with no inventory at the source", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const product = game.company.products[0];
     const opened = openFacilityForCompany(game.company, industry, "distribution-center", "tx-tyler", game.week, game.currentDate, "lease", "cash");
@@ -298,7 +298,7 @@ describe("internal transfers & logistics", () => {
 
 describe("long-horizon multi-facility, multi-region integration", () => {
   it("runs 110 weeks across two facilities and two markets with the accounting identity intact every week", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams({ facilityTemplateId: "small-job-shop" }));
+    const game = createTestGame("paper-manufacturing", "Test", baseParams({ facilityTemplateId: "small-job-shop" }));
     const industry = getIndustryDefinition("paper-manufacturing")!;
     const productId = game.company.products[0].id;
 

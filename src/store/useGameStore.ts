@@ -14,6 +14,9 @@ import { promoteEmployeeToManager } from "../engine/management";
 import { approveManagerDecision as approveManagerDecisionEngine, rejectManagerDecision as rejectManagerDecisionEngine } from "../engine/delegation";
 import { enterMarket as enterMarketEngine, exitMarket as exitMarketEngine, type EnterMarketParams } from "../engine/expansion";
 import { transferInventory as transferInventoryEngine } from "../engine/logistics";
+import { researchProspect as researchProspectEngine, pitchProspect as pitchProspectEngine } from "../engine/prospecting";
+import { computeStaffingGaps } from "../engine/workload";
+import type { CustomerPitch } from "../types/core";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
 function clone<T>(value: T): T {
@@ -55,6 +58,8 @@ interface GameStoreState {
   enterMarket: (params: EnterMarketParams) => { ok: boolean; reason?: string };
   exitMarket: (entryId: string) => void;
   transferInventory: (productId: string, fromFacilityId: string, toFacilityId: string, quantity: number) => { ok: boolean; reason?: string };
+  researchProspect: (prospectId: string) => { ok: boolean; reason?: string };
+  pitchProspect: (prospectId: string, pitch: CustomerPitch) => { ok: boolean; won?: boolean; reason?: string };
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
@@ -421,5 +426,35 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     next.company.entries.push(...result.entries);
     set({ game: next });
     return { ok: true };
+  },
+
+  researchProspect: (prospectId) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const result = researchProspectEngine(next.company, prospectId, next.week, next.currentDate);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    next.company.entries.push(...result.entries);
+    set({ game: next });
+    return { ok: true };
+  },
+
+  pitchProspect: (prospectId, pitch) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const industry = getIndustryDefinition(next.company.industryId);
+    if (!industry) return { ok: false, reason: "Unknown industry." };
+    const salesGap = computeStaffingGaps(next.company, industry.employeeRoles).sales;
+    const salesSkillFactor = Math.max(0.4, Math.min(1.6, salesGap.efficiency));
+    const hasQualityInvestment = next.company.employees.some(
+      (e) => e.status === "active" && (e.roleId === "quality-inspector" || e.roleId === "plant-manager"),
+    );
+    const productQualityFactor = hasQualityInvestment ? 1.0 : 0.82;
+    const result = pitchProspectEngine(next.company, prospectId, pitch, salesSkillFactor, productQualityFactor, next.week, next.currentDate, next.rng);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    next.company.entries.push(...result.entries);
+    set({ game: next });
+    return { ok: true, won: result.won, reason: result.reason };
   },
 }));

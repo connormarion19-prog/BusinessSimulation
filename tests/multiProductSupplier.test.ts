@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNewGame } from "../src/engine/newGame";
+import { createTestGame } from "./testHelpers";
 import { advanceWeek } from "../src/engine/clock";
 import { trialBalance } from "../src/engine/ledger";
 import { balanceSheetAsOf } from "../src/engine/reports";
@@ -27,7 +27,7 @@ function baseParams(overrides: Partial<NewCompanyParams> = {}): NewCompanyParams
 
 describe("multi-product operations", () => {
   it("adding a product scales down existing allocations to keep the total at 1", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     expect(game.company.products[0].capacityAllocationPct).toBe(1);
 
@@ -40,14 +40,14 @@ describe("multi-product operations", () => {
   });
 
   it("refuses to add the same product twice or discontinue the last active product", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     expect(addProductToCompany(game.company, industry, "copy-paper", game.week, game.currentDate, game.rng)).toBe(false);
     expect(discontinueProductOnCompany(game.company, game.company.products[0].id, game.week, game.currentDate)).toBe(false);
   });
 
   it("keeps the accounting identity intact while running two product lines for 30 weeks", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addProductToCompany(game.company, industry, "specialty-paper", game.week, game.currentDate, game.rng);
     expect(game.company.products).toHaveLength(2);
@@ -67,7 +67,7 @@ describe("multi-product operations", () => {
   });
 
   it("discontinuing a product stops new production but still sells off remaining inventory", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addProductToCompany(game.company, industry, "packaging-paper", game.week, game.currentDate, game.rng);
     for (let i = 0; i < 8; i++) advanceWeek(game);
@@ -93,7 +93,7 @@ describe("multi-product operations", () => {
 
 describe("supplier diversification", () => {
   it("adding a supplier scales down existing allocations to keep the total at 1", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     expect(game.company.suppliers[0].purchaseAllocationPct).toBe(1);
 
@@ -105,7 +105,7 @@ describe("supplier diversification", () => {
   });
 
   it("removing a supplier redistributes its allocation and refuses to drop the last one", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "discount-pulp-broker", game.week, game.currentDate);
     expect(game.company.suppliers).toHaveLength(2);
@@ -121,7 +121,7 @@ describe("supplier diversification", () => {
   });
 
   it("keeps the accounting identity intact purchasing from three suppliers over 20 weeks", () => {
-    const game = createNewGame("paper-manufacturing", "Test", baseParams());
+    const game = createTestGame("paper-manufacturing", "Test", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(game.company, industry, "discount-pulp-broker", game.week, game.currentDate);
     addSupplierToCompany(game.company, industry, "premium-northern-pulp", game.week, game.currentDate);
@@ -138,8 +138,8 @@ describe("supplier diversification", () => {
 
   it("a diversified supplier base takes a smaller shortfall from a disruption than a single-sourced one", () => {
     // Same seed, same founding conditions; one game diversifies suppliers, the other doesn't.
-    const soloGame = createNewGame("paper-manufacturing", "Solo", baseParams());
-    const diversifiedGame = createNewGame("paper-manufacturing", "Diversified", baseParams());
+    const soloGame = createTestGame("paper-manufacturing", "Solo", baseParams());
+    const diversifiedGame = createTestGame("paper-manufacturing", "Diversified", baseParams());
     const industry = getIndustryDefinition("paper-manufacturing")!;
     addSupplierToCompany(diversifiedGame.company, industry, "discount-pulp-broker", diversifiedGame.week, diversifiedGame.currentDate);
     addSupplierToCompany(diversifiedGame.company, industry, "premium-northern-pulp", diversifiedGame.week, diversifiedGame.currentDate);
