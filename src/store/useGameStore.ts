@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AuthorityLevel, GameState } from "../types/core";
+import type { AuthorityLevel, FacilityOwnershipType, GameState } from "../types/core";
 import type { Employee } from "../types/employee";
 import type { NewCompanyParams } from "../types/industry";
 import { createNewGame } from "../engine/newGame";
@@ -9,9 +9,11 @@ import { generateApplicantPool, answerInterviewQuestion as answerInterviewQuesti
 import { makeEntry, dr, cr } from "../engine/ledger";
 import { addProductToCompany, discontinueProductOnCompany } from "../engine/products";
 import { addSupplierToCompany, removeSupplierFromCompany } from "../engine/suppliers";
-import { openFacilityForCompany } from "../engine/facilities";
+import { openFacilityForCompany, type FacilityFinancing } from "../engine/facilities";
 import { promoteEmployeeToManager } from "../engine/management";
 import { approveManagerDecision as approveManagerDecisionEngine, rejectManagerDecision as rejectManagerDecisionEngine } from "../engine/delegation";
+import { enterMarket as enterMarketEngine, exitMarket as exitMarketEngine, type EnterMarketParams } from "../engine/expansion";
+import { transferInventory as transferInventoryEngine } from "../engine/logistics";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
 function clone<T>(value: T): T {
@@ -45,10 +47,13 @@ interface GameStoreState {
   giveRaise: (employeeId: string, newSalaryWeekly: number) => void;
   promoteEmployee: (employeeId: string, managerRoleId: string) => void;
   reassignManager: (employeeId: string, managerId: string | null) => void;
-  openFacility: (facilityTemplateId: string, locationId: string) => void;
+  openFacility: (facilityTemplateId: string, locationId: string, ownershipType?: FacilityOwnershipType, financing?: FacilityFinancing) => void;
   setDelegationAuthority: (domain: "purchasing" | "hiring", authority: AuthorityLevel, thresholdAmount: number) => void;
   approveManagerDecision: (decisionId: string) => void;
   rejectManagerDecision: (decisionId: string) => void;
+  enterMarket: (params: EnterMarketParams) => { ok: boolean; reason?: string };
+  exitMarket: (entryId: string) => void;
+  transferInventory: (productId: string, fromFacilityId: string, toFacilityId: string, quantity: number) => { ok: boolean; reason?: string };
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
@@ -332,15 +337,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ game: next });
   },
 
-  openFacility: (facilityTemplateId, locationId) => {
+  openFacility: (facilityTemplateId, locationId, ownershipType = "lease", financing = "cash") => {
     const { game } = get();
     if (!game) return;
     const next = clone(game);
     const industry = getIndustryDefinition(next.company.industryId);
     if (!industry) return;
-    const result = openFacilityForCompany(next.company, industry, facilityTemplateId, locationId, next.week, next.currentDate);
-    if (!result.ok) return;
+    const result = openFacilityForCompany(next.company, industry, facilityTemplateId, locationId, next.week, next.currentDate, ownershipType, financing);
+    if (!result.ok || !result.facility) return;
     next.company.entries.push(...result.entries);
+    for (const p of next.company.products) {
+      if (p.facilityInventory[result.facility.id] === undefined) p.facilityInventory[result.facility.id] = 0;
+    }
     set({ game: next });
   },
 
@@ -366,5 +374,37 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const next = clone(game);
     if (!rejectManagerDecisionEngine(next.company, decisionId)) return;
     set({ game: next });
+  },
+
+  enterMarket: (params) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const industry = getIndustryDefinition(next.company.industryId);
+    if (!industry) return { ok: false, reason: "Unknown industry." };
+    const result = enterMarketEngine(next.company, industry, next.market, next.competitors, params, next.week, next.currentDate, next.rng);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    next.company.entries.push(...result.entries);
+    set({ game: next });
+    return { ok: true };
+  },
+
+  exitMarket: (entryId) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clone(game);
+    if (!exitMarketEngine(next.company, entryId, next.week, next.currentDate)) return;
+    set({ game: next });
+  },
+
+  transferInventory: (productId, fromFacilityId, toFacilityId, quantity) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const result = transferInventoryEngine(next.company, productId, fromFacilityId, toFacilityId, quantity, next.week, next.currentDate);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    next.company.entries.push(...result.entries);
+    set({ game: next });
+    return { ok: true };
   },
 }));

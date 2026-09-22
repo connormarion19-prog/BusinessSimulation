@@ -12,18 +12,31 @@ export type CompanyStage =
   | "large-company" // executive management
   | "corporation"; // divisions, acquisitions, international
 
+export type FacilityOwnershipType = "lease" | "purchase" | "construction";
+export type FacilityStatus = "operating" | "under-construction" | "closed";
+/** Generic role so non-production facilities (distribution centers, offices) share the same model without being forced into a factory shape. */
+export type FacilityRole = "production" | "distribution" | "office";
+
 export interface Facility {
   id: string;
   name: string;
-  type: string; // industry-specific, e.g. "job-shop", "mill"
+  type: string; // industry-specific, e.g. "job-shop", "mill", "distribution-center"
+  role: FacilityRole;
   locationId: string;
   baseWeeklyCapacityUnits: number;
+  /** How many finished-goods units can physically sit here. Bounds internal transfers in; does not gate sales. */
+  storageCapacityUnits: number;
   equipmentLevel: number; // 1 = manual/basic, higher = more automated/capacity
   condition: number; // 0-100, degrades with use, restored by maintenance
   weeklyLeaseCost: number;
   weeklyUtilityBaseCost: number;
   ownedOutright: boolean;
+  ownershipType: FacilityOwnershipType;
   purchaseValue: number;
+  status: FacilityStatus;
+  /** Set when status is "under-construction"; the facility comes online this week. */
+  constructionCompleteWeek: number | null;
+  openedWeek: number;
 }
 
 export interface ProductLine {
@@ -49,6 +62,8 @@ export interface ProductLine {
   /** false = discontinued: no longer produced, but remaining inventory can still be sold off. */
   active: boolean;
   discontinuedWeek?: number;
+  /** Physical location of on-hand inventory, keyed by facility id. Sum should equal inventoryUnits. Used for facility-level reporting and internal transfers; sales draw from the pooled total. */
+  facilityInventory: Record<string, number>;
 }
 
 export interface CustomerAccount {
@@ -58,6 +73,8 @@ export interface CustomerAccount {
   productId: string;
   segment: string;
   location: string;
+  /** Which geographic market (see data/locations.ts) this account is based in. Demand only materializes while the company has an active presence in this market. */
+  locationId: string;
   annualVolumeUnits: number; // typical annual order volume at full satisfaction
   priceSensitivity: number; // 0-1, higher = more price sensitive
   qualityExpectation: number; // 0-1
@@ -160,6 +177,59 @@ export interface ManagerDecisionLogEntry {
   proposal?: { supplierAllocations?: Record<string, number>; openingId?: string; candidateId?: string; salaryWeekly?: number; facilityId?: string };
 }
 
+/**
+ * remote: sell into the region from existing facilities, no local presence. Cheapest, instant, worst freight economics.
+ * distributor: a local distributor resells for you. Moderate cost, a few weeks to line up, gives up margin instead of paying freight.
+ * warehouse: a local distribution-center facility you stock via internal transfers. Real capital, real transit time, near-local delivery once stocked.
+ * facility: a full local production facility (lease/purchase/construction). Highest capital and longest lead time, but local production removes freight/regional risk entirely.
+ */
+export type MarketEntryMode = "remote" | "distributor" | "warehouse" | "facility";
+export type MarketEntryStatus = "entering" | "active" | "exited";
+
+export interface ExpansionForecast {
+  estimatedMarketSizeLow: number;
+  estimatedMarketSizeHigh: number;
+  expectedFirstYearRevenueLow: number;
+  expectedFirstYearRevenueHigh: number;
+  expectedOperatingMarginLow: number;
+  expectedOperatingMarginHigh: number;
+  requiredInvestmentLow: number;
+  requiredInvestmentHigh: number;
+  estimatedBreakEvenYearsLow: number;
+  estimatedBreakEvenYearsHigh: number;
+  risks: string[];
+}
+
+export interface MarketEntry {
+  id: string;
+  locationId: string;
+  productId: string;
+  mode: MarketEntryMode;
+  status: MarketEntryStatus;
+  enteredWeek: number;
+  enteredDate: string;
+  /** The week this entry starts generating sales — remote is immediate, a facility can be months out. */
+  activeFromWeek: number;
+  investment: number;
+  facilityId?: string;
+  forecast: ExpansionForecast;
+  /** Running actuals since entry, for forecast-vs-actual reporting. */
+  actualRevenueToDate: number;
+  actualWeeksActive: number;
+  exitedWeek?: number;
+}
+
+export interface InTransitShipment {
+  id: string;
+  productId: string;
+  fromFacilityId: string;
+  toFacilityId: string;
+  quantity: number;
+  freightCost: number;
+  shipWeek: number;
+  arrivalWeek: number;
+}
+
 export type DecisionKind =
   | "review-candidate"
   | "review-evaluation"
@@ -171,7 +241,9 @@ export type DecisionKind =
   | "cash-warning"
   | "facility-maintenance"
   | "management-overload"
-  | "manager-decision-pending";
+  | "manager-decision-pending"
+  | "market-entry-ready"
+  | "warehouse-restock-needed";
 
 export interface PendingDecision {
   id: string;
@@ -213,6 +285,8 @@ export interface Company {
   targetCustomerSegment: string;
   delegation: DelegationSettings;
   managerDecisionLog: ManagerDecisionLogEntry[];
+  enteredMarkets: MarketEntry[];
+  inTransitShipments: InTransitShipment[];
 }
 
 export interface EconomyState {

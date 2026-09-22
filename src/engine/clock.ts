@@ -12,6 +12,10 @@ import { weekDate } from "./dateUtils";
 import { getCash } from "./company";
 import { computeManagementSnapshot } from "./management";
 import { runDelegatedHiring, runDelegatedPurchasing } from "./delegation";
+import { processFacilityConstruction } from "./facilities";
+import { processMarketEntries } from "./expansion";
+import { processInTransitShipments } from "./logistics";
+import { driftRegionalMarket, syncHomeRegion } from "./geography";
 import { LOCATIONS_BY_ID } from "../data/locations";
 
 function determineStage(employeeCount: number): GameState["company"]["stage"] {
@@ -63,6 +67,17 @@ export function advanceWeek(state: GameState): GameState {
   state.company.entries.push(...weekResult.entries);
   state.company.historyLog.push(...weekResult.historyEvents);
   state.market = weekResult.market;
+
+  // Generic, industry-agnostic post-processing: facilities finishing construction, market entries
+  // finishing their ramp-up, inbound internal transfers landing, and every region's own demand drifting.
+  state.company.entries.push(...processFacilityConstruction(state.company, newWeek, date));
+  processMarketEntries(state.company, newWeek);
+  processInTransitShipments(state.company, newWeek);
+  syncHomeRegion(state.market, state.company.locationId, state.competitors);
+  for (const locId of Object.keys(state.market.regions)) {
+    if (locId === state.company.locationId) continue;
+    state.market.regions[locId] = driftRegionalMarket(state.market.regions[locId], state.economy, state.competitors, state.rng);
+  }
 
   // Loan amortization (generic across industries)
   for (const loan of state.company.loans) {
@@ -195,8 +210,39 @@ export function advanceWeek(state: GameState): GameState {
       relatedId: decision.id,
     });
   }
+  for (const entry of state.company.enteredMarkets) {
+    if (entry.status === "active" && entry.activeFromWeek === newWeek) {
+      const location = LOCATIONS_BY_ID[entry.locationId];
+      decisions.push({
+        id: `dec-market-entry-${entry.id}`,
+        kind: "market-entry-ready",
+        week: newWeek,
+        title: `${location?.city ?? entry.locationId} is now live`,
+        detail: `Your ${entry.mode} entry into ${location?.city ?? entry.locationId}, ${location?.state ?? ""} started generating sales this week.`,
+        severity: "info",
+        relatedId: entry.id,
+      });
+    }
+    if (entry.status === "active" && entry.facilityId) {
+      const facility = state.company.facilities.find((f) => f.id === entry.facilityId);
+      const localStock = facility
+        ? state.company.products.reduce((s, p) => s + (p.facilityInventory[facility.id] ?? 0), 0)
+        : 0;
+      if (facility && localStock < facility.storageCapacityUnits * 0.08) {
+        decisions.push({
+          id: `dec-warehouse-${entry.id}`,
+          kind: "warehouse-restock-needed",
+          week: newWeek,
+          title: `${facility.name} is nearly empty`,
+          detail: `Only ${Math.round(localStock)} units on hand — transfer inventory in from a factory or sales here will fall back to higher-freight shipments.`,
+          severity: "warning",
+          relatedId: facility.id,
+        });
+      }
+    }
+  }
   for (const facility of state.company.facilities) {
-    if (facility.condition < 45) {
+    if (facility.status === "operating" && facility.condition < 45) {
       decisions.push({
         id: `dec-facility-${facility.id}`,
         kind: "facility-maintenance",

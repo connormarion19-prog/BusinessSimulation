@@ -12,7 +12,7 @@ export function createNewGame(industryId: string, saveName: string, params: NewC
   const seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
   const rng = createRng(seed);
   const { company, market } = industry.createInitialState(params, rng);
-  const competitors = generateInitialCompetitors(market, params.foundedWeek, rng, 3);
+  const competitors = generateInitialCompetitors(market, params.foundedWeek, rng, 3, company.locationId);
   const economy = createInitialEconomy(params.difficulty);
 
   return {

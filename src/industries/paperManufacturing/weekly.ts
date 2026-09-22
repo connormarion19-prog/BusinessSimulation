@@ -1,7 +1,7 @@
 import type { IndustrySimContext, IndustryWeekResult } from "../../types/industry";
 import type { JournalEntry } from "../../types/finance";
 import type { Department, Employee, WeeklyEvaluation } from "../../types/employee";
-import type { SupplierRelationship } from "../../types/core";
+import type { CustomerAccount, MarketEntry, ProductLine, SupplierRelationship } from "../../types/core";
 import { makeEntry, dr, cr, round2, accountBalance } from "../../engine/ledger";
 import { chance, nextRange } from "../../engine/rng";
 import { computeWeeklyPerformance, updateMoraleAndFatigue, type PerformanceResult } from "../../engine/performance";
@@ -11,6 +11,9 @@ import { PAPER_EVENTS, supplierShortfallFlagKey } from "./events";
 import { PAPER_PRODUCTS_BY_ID } from "./products";
 import { PAPER_ROLES_BY_ID } from "./roles";
 import { computeManagerSpanCapacity, computeSpanOverloadFactor, directReportsOf } from "../../engine/management";
+import { estimateNearbyCompetitorCapacity } from "../../engine/geography";
+import { freightCostPerUnit, nearestFacility } from "../../engine/logistics";
+import { LOCATIONS_BY_ID } from "../../data/locations";
 
 const FOUNDER_BASE_UNITS_PER_WEEK = 95;
 const FOUNDER_BASE_SKILL = 62;
@@ -27,6 +30,7 @@ const PAYROLL_ROUTING: Record<string, "labor" | "overhead" | "admin" | "sales"> 
   "purchasing-agent": "overhead",
   "purchasing-manager": "overhead",
   "plant-manager": "overhead",
+  "regional-operations-manager": "overhead",
   "sales-rep": "sales",
   "sales-manager": "sales",
   bookkeeper: "admin",
@@ -35,6 +39,30 @@ const PAYROLL_ROUTING: Record<string, "labor" | "overhead" | "admin" | "sales"> 
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
+}
+
+/** Deducts sold units from facility inventory buckets, preferring a specific facility (e.g. the one that served the sale) before spreading the remainder proportionally across other stocked facilities. Keeps sum(facilityInventory) in sync with the pooled inventoryUnits total that sales actually draw from. */
+function deductFacilityInventory(product: ProductLine, preferredFacilityId: string | undefined, qty: number): void {
+  let remaining = qty;
+  if (preferredFacilityId) {
+    const have = product.facilityInventory[preferredFacilityId] ?? 0;
+    const take = Math.min(have, remaining);
+    if (take > 0) {
+      product.facilityInventory[preferredFacilityId] = round2(have - take);
+      remaining = round2(remaining - take);
+    }
+  }
+  if (remaining <= 0.01) return;
+  const bucketIds = Object.keys(product.facilityInventory).filter(
+    (id) => id !== preferredFacilityId && (product.facilityInventory[id] ?? 0) > 0,
+  );
+  const totalOther = bucketIds.reduce((s, id) => s + (product.facilityInventory[id] ?? 0), 0);
+  if (totalOther <= 0) return;
+  for (const id of bucketIds) {
+    const share = (product.facilityInventory[id] ?? 0) / totalOther;
+    const take = Math.min(product.facilityInventory[id] ?? 0, round2(remaining * share));
+    product.facilityInventory[id] = round2((product.facilityInventory[id] ?? 0) - take);
+  }
 }
 
 function activeByRole(ctx: IndustrySimContext, roleId: string): Employee | undefined {
@@ -106,7 +134,8 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   const purchasingEffectiveness = clamp(purchasingSkill / 65, 0.5, 1.4);
   const bufferWeeks = clamp(1 + purchasingEffectiveness, 1, 3.5);
 
-  const totalMachineCapacity = company.facilities.reduce((s, f) => s + f.baseWeeklyCapacityUnits * (f.condition / 100), 0);
+  const operatingFacilities = company.facilities.filter((f) => f.status === "operating");
+  const totalMachineCapacity = operatingFacilities.reduce((s, f) => s + f.baseWeeklyCapacityUnits * (f.condition / 100), 0);
   const projectedWeeklyConsumption = activeProducts.reduce(
     (sum, p) => sum + totalMachineCapacity * p.capacityAllocationPct * p.inputUnitsPerProductUnit,
     0,
@@ -163,7 +192,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
 
   const facilityLaborCapacity = new Map<string, number>();
   const facilityMachineCapacity = new Map<string, number>();
-  for (const facility of company.facilities) {
+  for (const facility of operatingFacilities) {
     facilityMachineCapacity.set(facility.id, facility.baseWeeklyCapacityUnits * (facility.condition / 100));
     facilityLaborCapacity.set(facility.id, facility.id === homeFacility.id ? founderProductionContribution : 0);
   }
@@ -228,6 +257,17 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     product.inventoryUnits = round2(product.inventoryUnits + goodUnits);
     product.unitsProducedLastWeek = goodUnits;
 
+    if (goodUnits > 0 && totalMachineCapacity > 0) {
+      for (const facility of operatingFacilities) {
+        const facCap = facilityMachineCapacity.get(facility.id) ?? 0;
+        if (facCap <= 0) continue;
+        const facUnits = round2(goodUnits * (facCap / totalMachineCapacity));
+        if (facUnits > 0) {
+          product.facilityInventory[facility.id] = round2((product.facilityInventory[facility.id] ?? 0) + facUnits);
+        }
+      }
+    }
+
     totalUnitsAttempted += unitsAttempted;
     totalGoodUnits += goodUnits;
     totalScrapUnits += scrapUnits;
@@ -255,7 +295,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   // Facility-level costs: each facility's own utilization drives its own decay and utility bill.
   let totalFacilityOverhead = 0;
   const facilityUtilizations: { name: string; utilization: number }[] = [];
-  for (const facility of company.facilities) {
+  for (const facility of operatingFacilities) {
     const facMachineCap = facilityMachineCapacity.get(facility.id) ?? 0;
     const facLaborCap = facilityLaborCapacity.get(facility.id) ?? 0;
     const facPlanned = Math.min(facMachineCap, facLaborCap);
@@ -320,9 +360,15 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
       narrativeNotes.push(`Raw materials covered only ${Math.round(materialsAvailableRatio * 100)}% of planned production across all product lines this week.`);
     }
   }
-  if (company.facilities.length > 1) {
+  if (operatingFacilities.length > 1) {
     narrativeNotes.push(
       `Facility utilization — ${facilityUtilizations.map((f) => `${f.name}: ${Math.round(f.utilization * 100)}%`).join("; ")}.`,
+    );
+  }
+  const underConstruction = company.facilities.filter((f) => f.status === "under-construction");
+  if (underConstruction.length > 0) {
+    narrativeNotes.push(
+      `Under construction — ${underConstruction.map((f) => `${f.name} (opens week ${f.constructionCompleteWeek})`).join("; ")}.`,
     );
   }
 
@@ -342,8 +388,19 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     salesEffectiveness = clamp((0.55 + company.founderAllocation.sales * 0.9) * founderEffectiveness, 0.3, 1.3);
   }
   const competitorCapacity = ctx.competitors.reduce((s, c) => s + c.capacityUnits, 0);
+  const homeLocationId = company.locationId;
+
+  interface SalesChannel {
+    locationId: string;
+    orders: number;
+    customers: CustomerAccount[];
+    freightPerUnit: number;
+    commissionPct: number;
+    entry?: MarketEntry;
+  }
 
   let totalRevenue = 0;
+  const regionalRevenueThisWeek = new Map<string, number>();
   for (const product of sellableProducts) {
     const template = PAPER_PRODUCTS_BY_ID[product.templateId];
     const categoryShare = template?.categoryDemandShare ?? 1 / Math.max(1, sellableProducts.length);
@@ -353,76 +410,183 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
       ? productCapacity / (productCapacity + competitorCapacity * categoryShare)
       : 0;
     const spotShareFactor = clamp(Math.pow(relativePrice, -market.priceElasticity), 0.15, 2.5);
-    const spotMarketOrders = market.regionalWeeklyDemandUnits * categoryShare * companyShareOfCapacity * spotShareFactor * salesEffectiveness;
+    const homeSpotOrders = market.regionalWeeklyDemandUnits * categoryShare * companyShareOfCapacity * spotShareFactor * salesEffectiveness;
 
-    let contractedOrders = 0;
     const customersForProduct = company.customers.filter((c) => c.productId === product.id);
-    for (const customer of customersForProduct) {
+    const homeCustomers = customersForProduct.filter((c) => !c.locationId || c.locationId === homeLocationId);
+    let homeContractedOrders = 0;
+    for (const customer of homeCustomers) {
       const priceAcceptance = clamp(1 - customer.priceSensitivity * (relativePrice - 1), 0.2, 1.3);
       const weeklyDemand = (customer.annualVolumeUnits / 52) * priceAcceptance * (customer.relationshipStrength / 100);
-      contractedOrders += weeklyDemand;
+      homeContractedOrders += weeklyDemand;
     }
 
-    const totalOrders = round2(spotMarketOrders + contractedOrders);
-    const availableToSell = product.inventoryUnits;
-    const unitsSold = round2(Math.min(totalOrders, availableToSell));
-    const unitsUnfulfilled = round2(Math.max(0, totalOrders - availableToSell));
-    const fulfillRatio = totalOrders > 0 ? unitsSold / totalOrders : 1;
+    // Channel 1 is always the home market (unchanged formula/economics from the single-region era).
+    // Additional channels are any other regions the company has actively entered for this product.
+    const channels: SalesChannel[] = [
+      { locationId: homeLocationId, orders: round2(homeSpotOrders + homeContractedOrders), customers: homeCustomers, freightPerUnit: 0, commissionPct: 0 },
+    ];
 
-    for (const customer of customersForProduct) {
-      if (fulfillRatio > 0.95 && salesEffectiveness > 0.9) {
-        customer.relationshipStrength = clamp(customer.relationshipStrength + 1, 0, 100);
-        customer.atRisk = false;
-      } else if (fulfillRatio < 0.7) {
-        customer.relationshipStrength = clamp(customer.relationshipStrength - 6, 0, 100);
-        if (customer.relationshipStrength < 35) customer.atRisk = true;
+    const activeEntries = company.enteredMarkets.filter(
+      (e) => e.productId === product.id && e.status === "active" && e.locationId !== homeLocationId,
+    );
+    for (const entry of activeEntries) {
+      const region = market.regions[entry.locationId];
+      if (!region) continue;
+      const regionCompetitorCapacity = estimateNearbyCompetitorCapacity(ctx.competitors, entry.locationId);
+      const regionShareOfCapacity = productCapacity > 0
+        ? productCapacity / (productCapacity + regionCompetitorCapacity * categoryShare)
+        : 0;
+      const regionRelativePrice = region.avgMarketPrice > 0 ? product.priceWeekly / region.avgMarketPrice : 1;
+      const regionSpotShareFactor = clamp(Math.pow(regionRelativePrice, -market.priceElasticity), 0.15, 2.5);
+      const regionSpotOrders = region.weeklyDemandUnits * categoryShare * regionShareOfCapacity * regionSpotShareFactor * salesEffectiveness;
+
+      const regionCustomers = customersForProduct.filter((c) => c.locationId === entry.locationId);
+      let regionContractedOrders = 0;
+      for (const customer of regionCustomers) {
+        const priceAcceptance = clamp(1 - customer.priceSensitivity * (regionRelativePrice - 1), 0.2, 1.3);
+        const weeklyDemand = (customer.annualVolumeUnits / 52) * priceAcceptance * (customer.relationshipStrength / 100);
+        regionContractedOrders += weeklyDemand;
       }
-      if (unitsSold > 0) customer.lastOrderWeek = week;
+
+      let freightPerUnit = 0;
+      let commissionPct = 0;
+      if (entry.mode === "distributor") {
+        commissionPct = 0.22;
+      } else {
+        const localFacility = entry.facilityId ? company.facilities.find((f) => f.id === entry.facilityId) : undefined;
+        const localStock = localFacility ? (product.facilityInventory[localFacility.id] ?? 0) : 0;
+        if (localFacility && localStock > 0.5) {
+          freightPerUnit = 0.15; // local delivery out of company-owned local stock
+        } else {
+          const nearest = nearestFacility(operatingFacilities.filter((f) => f.baseWeeklyCapacityUnits > 0), entry.locationId);
+          freightPerUnit = nearest ? freightCostPerUnit(nearest.locationId, entry.locationId) : 1.5;
+        }
+      }
+
+      channels.push({
+        locationId: entry.locationId,
+        orders: round2(regionSpotOrders + regionContractedOrders),
+        customers: regionCustomers,
+        freightPerUnit,
+        commissionPct,
+        entry,
+      });
     }
 
-    if (unitsSold > 0) {
-      const totalFgValue = product.fgValueMaterials + product.fgValueLabor + product.fgValueOverhead;
-      const avgUnitCost = product.inventoryUnits > 0 ? totalFgValue / product.inventoryUnits : 0;
-      const costOfSold = round2(unitsSold * avgUnitCost);
-      const matShare = totalFgValue > 0 ? product.fgValueMaterials / totalFgValue : 0;
-      const laborShare = totalFgValue > 0 ? product.fgValueLabor / totalFgValue : 0;
-      const costMat = round2(costOfSold * matShare);
-      const costLabor = round2(costOfSold * laborShare);
-      const costOh = round2(costOfSold - costMat - costLabor);
+    let unitsSoldTotal = 0;
+    let unitsUnfulfilledTotal = 0;
+    let productRevenue = 0;
 
-      product.fgValueMaterials = round2(Math.max(0, product.fgValueMaterials - costMat));
-      product.fgValueLabor = round2(Math.max(0, product.fgValueLabor - costLabor));
-      product.fgValueOverhead = round2(Math.max(0, product.fgValueOverhead - costOh));
-      product.inventoryUnits = round2(Math.max(0, product.inventoryUnits - unitsSold));
+    // Inventory is rationed proportionally across every active channel by its share of total orders this
+    // week, rather than first-come/first-served — otherwise a home market whose demand alone exceeds
+    // production would always starve every other region down to zero, no matter how much was entered.
+    const totalOrdersAllChannels = channels.reduce((s, c) => s + c.orders, 0);
+    const fulfillFraction = totalOrdersAllChannels > 0 ? clamp(product.inventoryUnits / totalOrdersAllChannels, 0, 1) : 1;
 
-      const revenue = round2(unitsSold * product.priceWeekly);
-      totalRevenue += revenue;
-      entries.push(
-        makeEntry({ week, date, memo: `Sales of ${product.name}`, source: "sale", lines: [dr("ar", revenue), cr("sales-revenue", revenue)], cashFlowCategory: "operating" }),
-      );
-      entries.push(
-        makeEntry({
-          week,
-          date,
-          memo: `Cost of goods sold — ${product.name}`,
-          source: "cogs",
-          lines: [dr("cogs-materials", costMat), dr("cogs-labor", costLabor), dr("cogs-overhead", costOh), cr("finished-goods", costOfSold)],
-          cashFlowCategory: "noncash",
-        }),
-      );
-      if (sellableProducts.length === 1) {
-        narrativeNotes.push(`Sold ${Math.round(unitsSold)} ${product.unitLabel}s at $${product.priceWeekly.toFixed(2)} (revenue $${revenue.toLocaleString()}).`);
+    for (const channel of channels) {
+      const totalOrders = channel.orders;
+      const unitsSold = round2(totalOrders * fulfillFraction);
+      const unitsUnfulfilled = round2(Math.max(0, totalOrders - unitsSold));
+      const fulfillRatio = totalOrders > 0 ? unitsSold / totalOrders : 1;
+
+      for (const customer of channel.customers) {
+        if (fulfillRatio > 0.95 && salesEffectiveness > 0.9) {
+          customer.relationshipStrength = clamp(customer.relationshipStrength + 1, 0, 100);
+          customer.atRisk = false;
+        } else if (fulfillRatio < 0.7) {
+          customer.relationshipStrength = clamp(customer.relationshipStrength - 6, 0, 100);
+          if (customer.relationshipStrength < 35) customer.atRisk = true;
+        }
+        if (unitsSold > 0) customer.lastOrderWeek = week;
+      }
+
+      if (unitsSold > 0) {
+        const totalFgValue = product.fgValueMaterials + product.fgValueLabor + product.fgValueOverhead;
+        const avgUnitCost = product.inventoryUnits > 0 ? totalFgValue / product.inventoryUnits : 0;
+        const costOfSold = round2(unitsSold * avgUnitCost);
+        const matShare = totalFgValue > 0 ? product.fgValueMaterials / totalFgValue : 0;
+        const laborShare = totalFgValue > 0 ? product.fgValueLabor / totalFgValue : 0;
+        const costMat = round2(costOfSold * matShare);
+        const costLabor = round2(costOfSold * laborShare);
+        const costOh = round2(costOfSold - costMat - costLabor);
+
+        product.fgValueMaterials = round2(Math.max(0, product.fgValueMaterials - costMat));
+        product.fgValueLabor = round2(Math.max(0, product.fgValueLabor - costLabor));
+        product.fgValueOverhead = round2(Math.max(0, product.fgValueOverhead - costOh));
+        product.inventoryUnits = round2(Math.max(0, product.inventoryUnits - unitsSold));
+        deductFacilityInventory(
+          product,
+          channel.locationId === homeLocationId ? homeFacility.id : channel.entry?.facilityId,
+          unitsSold,
+        );
+
+        const grossRevenue = round2(unitsSold * product.priceWeekly);
+        const commission = channel.commissionPct > 0 ? round2(grossRevenue * channel.commissionPct) : 0;
+        const freight = channel.freightPerUnit > 0 ? round2(unitsSold * channel.freightPerUnit) : 0;
+        const netRevenue = round2(grossRevenue - commission);
+        totalRevenue += netRevenue;
+        productRevenue += netRevenue;
+        regionalRevenueThisWeek.set(channel.locationId, round2((regionalRevenueThisWeek.get(channel.locationId) ?? 0) + netRevenue));
+
+        const destinationNote = channel.locationId !== homeLocationId ? ` (${LOCATIONS_BY_ID[channel.locationId]?.city ?? channel.locationId})` : "";
+        entries.push(
+          makeEntry({ week, date, memo: `Sales of ${product.name}${destinationNote}`, source: "sale", lines: [dr("ar", grossRevenue), cr("sales-revenue", grossRevenue)], cashFlowCategory: "operating" }),
+        );
+        if (commission > 0) {
+          entries.push(
+            makeEntry({ week, date, memo: `Distributor commission — ${product.name}${destinationNote}`, source: "distributor-commission", lines: [dr("distributor-commission-expense", commission), cr("ar", commission)], cashFlowCategory: "operating" }),
+          );
+        }
+        if (freight > 0) {
+          entries.push(
+            makeEntry({ week, date, memo: `Freight — ${product.name}${destinationNote}`, source: "freight", lines: [dr("freight-expense", freight), cr("cash", freight)], cashFlowCategory: "operating" }),
+          );
+        }
+        entries.push(
+          makeEntry({
+            week,
+            date,
+            memo: `Cost of goods sold — ${product.name}`,
+            source: "cogs",
+            lines: [dr("cogs-materials", costMat), dr("cogs-labor", costLabor), dr("cogs-overhead", costOh), cr("finished-goods", costOfSold)],
+            cashFlowCategory: "noncash",
+          }),
+        );
+
+        if (channel.entry) {
+          channel.entry.actualRevenueToDate = round2(channel.entry.actualRevenueToDate + netRevenue - freight - commission);
+        }
+      }
+      unitsSoldTotal = round2(unitsSoldTotal + unitsSold);
+      unitsUnfulfilledTotal = round2(unitsUnfulfilledTotal + unitsUnfulfilled);
+    }
+
+    if (sellableProducts.length === 1 && unitsSoldTotal > 0) {
+      narrativeNotes.push(`Sold ${Math.round(unitsSoldTotal)} ${product.unitLabel}s at $${product.priceWeekly.toFixed(2)} (revenue $${Math.round(productRevenue).toLocaleString()}).`);
+    }
+    if (activeEntries.length > 0) {
+      const regionLines = channels
+        .filter((c) => c.locationId !== homeLocationId)
+        .map((c) => `${LOCATIONS_BY_ID[c.locationId]?.city ?? c.locationId}: ${Math.round(regionalRevenueThisWeek.get(c.locationId) ?? 0).toLocaleString()}`);
+      if (regionLines.length > 0) {
+        narrativeNotes.push(`Regional sales — ${product.name}: ${regionLines.join("; ")}.`);
       }
     }
-    product.unitsSoldLastWeek = unitsSold;
-    product.unitsUnfulfilledLastWeek = unitsUnfulfilled;
+
+    product.unitsSoldLastWeek = unitsSoldTotal;
+    product.unitsUnfulfilledLastWeek = unitsUnfulfilledTotal;
     const existing = productResults.get(product.id);
     if (existing) {
-      existing.unitsSold = unitsSold;
-      existing.unitsUnfulfilled = unitsUnfulfilled;
+      existing.unitsSold = unitsSoldTotal;
+      existing.unitsUnfulfilled = unitsUnfulfilledTotal;
     } else {
-      productResults.set(product.id, { goodUnits: 0, scrapUnits: 0, unitsSold, unitsUnfulfilled });
+      productResults.set(product.id, { goodUnits: 0, scrapUnits: 0, unitsSold: unitsSoldTotal, unitsUnfulfilled: unitsUnfulfilledTotal });
     }
+  }
+
+  for (const entry of company.enteredMarkets) {
+    if (entry.status === "active") entry.actualWeeksActive += 1;
   }
 
   if (sellableProducts.length > 1) {

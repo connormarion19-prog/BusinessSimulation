@@ -42,14 +42,20 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
         id: "facility-1",
         name: facilityTemplate.name,
         type: facilityTemplate.type,
+        role: facilityTemplate.role,
         locationId: params.locationId,
         baseWeeklyCapacityUnits: facilityTemplate.baseWeeklyCapacityUnits,
+        storageCapacityUnits: facilityTemplate.storageCapacityUnits,
         equipmentLevel: facilityTemplate.equipmentLevel,
         condition: 100,
         weeklyLeaseCost: facilityTemplate.weeklyLeaseCost,
         weeklyUtilityBaseCost: facilityTemplate.weeklyUtilityBaseCost,
         ownedOutright: false,
+        ownershipType: "lease",
         purchaseValue: facilityTemplate.purchaseValue,
+        status: "operating",
+        constructionCompleteWeek: null,
+        openedWeek: params.foundedWeek,
       },
     ],
     products: [
@@ -71,6 +77,7 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
         unitsSoldLastWeek: 0,
         unitsUnfulfilledLastWeek: 0,
         active: true,
+        facilityInventory: { "facility-1": 0 },
       },
     ],
     rawMaterialInventoryUnits: 0,
@@ -82,6 +89,7 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
       productId: "product-1",
       segment: segment.id,
       location: "Regional",
+      locationId: params.locationId,
       annualVolumeUnits: Math.round(nextRange(rng, segment.typicalAnnualVolumeUnits[0], segment.typicalAnnualVolumeUnits[0] * 1.6)),
       priceSensitivity: segment.priceSensitivity,
       qualityExpectation: segment.qualityExpectation,
@@ -121,6 +129,8 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
     targetCustomerSegment: segment.id,
     delegation: defaultDelegationSettings(),
     managerDecisionLog: [],
+    enteredMarkets: [],
+    inTransitShipments: [],
   };
 
   const market: MarketState = {
@@ -132,8 +142,16 @@ function createInitialState(params: NewCompanyParams, rng: RngState): { company:
     priceElasticity: 1.4,
     unitLabel: productTemplate.unitLabel,
     inputLabel: "pulp-ton",
+    regions: {},
   };
   market.estimatedDemandRangeUnits = [Math.round(market.regionalWeeklyDemandUnits * 0.88), Math.round(market.regionalWeeklyDemandUnits * 1.12)];
+  market.regions[params.locationId] = {
+    locationId: params.locationId,
+    weeklyDemandUnits: market.regionalWeeklyDemandUnits,
+    estimatedDemandRangeUnits: market.estimatedDemandRangeUnits,
+    avgMarketPrice: market.avgMarketPrice,
+    competitivePressure: 0.3,
+  };
 
   return { company, market };
 }

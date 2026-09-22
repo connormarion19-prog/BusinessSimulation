@@ -13,7 +13,18 @@ export interface IndustryMeta {
   implemented: boolean;
 }
 
+/** One geographic market's own demand pool and price level. Keyed by location id in MarketState.regions. */
+export interface RegionalMarketState {
+  locationId: string;
+  weeklyDemandUnits: number;
+  estimatedDemandRangeUnits: [number, number];
+  avgMarketPrice: number;
+  /** 0-1 rough estimate of how contested this region is, from competitor presence there. Displayed to the player as an estimate, not exposed as ground truth. */
+  competitivePressure: number;
+}
+
 export interface MarketState {
+  /** National/home-region aggregate — still drives input pricing and the legacy single-market UI. */
   regionalWeeklyDemandUnits: number;
   estimatedDemandRangeUnits: [number, number];
   avgMarketPrice: number;
@@ -22,6 +33,8 @@ export interface MarketState {
   priceElasticity: number;
   unitLabel: string;
   inputLabel: string;
+  /** Per-location demand pools for every market the company has actually entered (see Company.enteredMarkets). */
+  regions: Record<string, RegionalMarketState>;
 }
 
 export interface ProductTemplate {
@@ -40,13 +53,17 @@ export interface FacilityTemplate {
   id: string;
   name: string;
   type: string;
+  role: import("./core").FacilityRole;
   description: string;
   baseWeeklyCapacityUnits: number;
+  storageCapacityUnits: number;
   equipmentLevel: number;
   weeklyLeaseCost: number;
   weeklyUtilityBaseCost: number;
   purchaseValue: number;
   minStartingCapitalRecommended: number;
+  /** Weeks of build time when opened via ownershipType "construction". Lease/purchase of an existing building is immediate. */
+  constructionWeeks: number;
 }
 
 export interface SupplierTemplate {

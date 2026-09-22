@@ -4,12 +4,19 @@ import type { MarketState } from "../types/industry";
 import type { RngState } from "./rng";
 import { nextRange, pick, weightedPick } from "./rng";
 import { round2 } from "./ledger";
+import { LOCATIONS } from "../data/locations";
 
 const STRATEGIES: CompetitorStrategy[] = ["cost-leader", "premium-differentiator", "aggressive-growth", "defend-regional", "cash-conservative"];
 const COMPETITOR_NAME_PREFIXES = ["Northgate", "Ironwood", "Blue River", "Cascade", "Stonebridge", "Meridian", "Redwood", "Fairview"];
 const COMPETITOR_NAME_SUFFIXES = ["Paper Co.", "Mills", "Converting", "Fiber Products", "Industries", "Paper Group"];
 
-export function generateInitialCompetitors(market: MarketState, foundedWeek: number, rng: RngState, count = 3): CompetitorCompany[] {
+/** Most competitors start near the player's home market (where the pool is deepest); a minority are scattered nationally so other regions aren't empty on entry. */
+function pickCompetitorLocation(homeLocationId: string, rng: RngState): string {
+  if (chanceRoll(rng, 0.6)) return homeLocationId;
+  return pick(rng, LOCATIONS).id;
+}
+
+export function generateInitialCompetitors(market: MarketState, foundedWeek: number, rng: RngState, count = 3, homeLocationId = "wi-greenbay"): CompetitorCompany[] {
   const competitors: CompetitorCompany[] = [];
   for (let i = 0; i < count; i++) {
     const strategy = STRATEGIES[i % STRATEGIES.length];
@@ -19,7 +26,7 @@ export function generateInitialCompetitors(market: MarketState, foundedWeek: num
       id: `competitor-${i + 1}`,
       name: `${pick(rng, COMPETITOR_NAME_PREFIXES)} ${pick(rng, COMPETITOR_NAME_SUFFIXES)}`,
       industryId: "paper-manufacturing",
-      locationId: "regional",
+      locationId: pickCompetitorLocation(homeLocationId, rng),
       strategy,
       cash: Math.round(nextRange(rng, 80_000, 600_000)),
       debt: Math.round(nextRange(rng, 0, 300_000)),

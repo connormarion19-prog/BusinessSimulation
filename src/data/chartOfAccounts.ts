@@ -9,6 +9,7 @@ export const CHART_OF_ACCOUNTS: Account[] = [
   { id: "prepaid-expenses", name: "Prepaid Expenses", type: "asset", normalSide: "debit" },
   { id: "ppe", name: "Property, Plant & Equipment", type: "asset", normalSide: "debit" },
   { id: "accum-depreciation", name: "Accumulated Depreciation", type: "asset", normalSide: "credit" },
+  { id: "construction-in-progress", name: "Construction in Progress", type: "asset", normalSide: "debit" },
 
   // Liabilities
   { id: "ap", name: "Accounts Payable", type: "liability", normalSide: "credit" },
@@ -47,6 +48,9 @@ export const CHART_OF_ACCOUNTS: Account[] = [
   { id: "bad-debt-expense", name: "Bad Debt Expense", type: "expense", normalSide: "debit" },
   { id: "interest-expense", name: "Interest Expense", type: "expense", normalSide: "debit" },
   { id: "income-tax-expense", name: "Income Tax Expense", type: "expense", normalSide: "debit" },
+  { id: "freight-expense", name: "Freight & Logistics Expense", type: "expense", normalSide: "debit" },
+  { id: "distributor-commission-expense", name: "Distributor Commission", type: "expense", normalSide: "debit" },
+  { id: "market-research-expense", name: "Market Research Expense", type: "expense", normalSide: "debit" },
 ];
 
 export const ACCOUNTS_BY_ID: Record<string, Account> = Object.fromEntries(
@@ -66,6 +70,9 @@ export const OPERATING_EXPENSE_ACCOUNT_IDS = [
   "recruiting-expense",
   "misc-expense",
   "bad-debt-expense",
+  "freight-expense",
+  "distributor-commission-expense",
+  "market-research-expense",
 ];
 
 export const COGS_ACCOUNT_IDS = [

@@ -41,6 +41,7 @@ export function addProductToCompany(
     unitsSoldLastWeek: 0,
     unitsUnfulfilledLastWeek: 0,
     active: true,
+    facilityInventory: Object.fromEntries(company.facilities.map((f) => [f.id, 0])),
   });
   company.historyLog.push({
     week,

@@ -134,6 +134,7 @@ export const PAPER_EVENTS: IndustryEventDefinition[] = [
         productId: targetProduct.id,
         segment: segment.id,
         location: "Regional",
+        locationId: ctx.company.locationId,
         annualVolumeUnits: annualVolume,
         priceSensitivity: segment.priceSensitivity,
         qualityExpectation: segment.qualityExpectation,

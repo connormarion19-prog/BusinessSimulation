@@ -84,6 +84,19 @@ describe("legacy save migration", () => {
     expect(migrated.company.delegation.hiring.authority).toBe("player-approval");
     expect(migrated.company.managerDecisionLog).toEqual([]);
     expect(migrated.lastManagementSnapshot).toBeNull();
+
+    // Phase 3 fields — none of these existed in the original save shape.
+    const facility = migrated.company.facilities[0];
+    expect(facility.role).toBe("production");
+    expect(facility.ownershipType).toBe("lease");
+    expect(facility.status).toBe("operating");
+    expect(facility.storageCapacityUnits).toBeGreaterThan(0);
+    expect(product.facilityInventory[facility.id]).toBe(0);
+    expect(migrated.company.customers[0].locationId).toBe("wi-greenbay");
+    expect(migrated.company.enteredMarkets).toEqual([]);
+    expect(migrated.company.inTransitShipments).toEqual([]);
+    expect(migrated.market.regions["wi-greenbay"]).toBeDefined();
+    expect(migrated.market.regions["wi-greenbay"].weeklyDemandUnits).toBe(10000);
   });
 
   it("a migrated legacy save can keep simulating with a balanced ledger", () => {

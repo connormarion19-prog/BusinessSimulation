@@ -9,6 +9,9 @@ export interface LocationOption {
   industrialInfrastructure: number; // 0-1, affects logistics cost & facility options
   regionalDemandMultiplier: number; // local market size vs national average
   supplierProximityNote: string;
+  /** Rough relative position (not real lat/long) used only to estimate freight distance between markets. */
+  coordX: number;
+  coordY: number;
 }
 
 export const LOCATIONS: LocationOption[] = [
@@ -23,6 +26,8 @@ export const LOCATIONS: LocationOption[] = [
     industrialInfrastructure: 0.95,
     regionalDemandMultiplier: 1.05,
     supplierProximityNote: "Multiple regional pulp mills within short haul distance — lower freight, faster resupply.",
+    coordX: 52,
+    coordY: 78,
   },
   {
     id: "ga-savannah",
@@ -35,6 +40,8 @@ export const LOCATIONS: LocationOption[] = [
     industrialInfrastructure: 0.88,
     regionalDemandMultiplier: 0.95,
     supplierProximityNote: "Southern pine pulp readily available; port access supports future export ambitions.",
+    coordX: 68,
+    coordY: 25,
   },
   {
     id: "oh-columbus",
@@ -47,6 +54,8 @@ export const LOCATIONS: LocationOption[] = [
     industrialInfrastructure: 0.9,
     regionalDemandMultiplier: 1.15,
     supplierProximityNote: "Pulp must be freighted in from Wisconsin/Southern mills — moderate freight surcharge.",
+    coordX: 62,
+    coordY: 68,
   },
   {
     id: "pa-erie",
@@ -59,6 +68,8 @@ export const LOCATIONS: LocationOption[] = [
     industrialInfrastructure: 0.8,
     regionalDemandMultiplier: 0.9,
     supplierProximityNote: "Reasonable rail access to Northeast pulp suppliers; some routes are single-carrier.",
+    coordX: 72,
+    coordY: 80,
   },
   {
     id: "or-portland",
@@ -71,6 +82,8 @@ export const LOCATIONS: LocationOption[] = [
     industrialInfrastructure: 0.85,
     regionalDemandMultiplier: 1.0,
     supplierProximityNote: "Excellent softwood pulp access; stricter environmental permitting can slow expansion.",
+    coordX: 8,
+    coordY: 88,
   },
   {
     id: "tx-tyler",
@@ -83,9 +96,20 @@ export const LOCATIONS: LocationOption[] = [
     industrialInfrastructure: 0.78,
     regionalDemandMultiplier: 1.1,
     supplierProximityNote: "Regional pine pulp suppliers nearby, though fewer alternates if one fails.",
+    coordX: 45,
+    coordY: 22,
   },
 ];
 
 export const LOCATIONS_BY_ID: Record<string, LocationOption> = Object.fromEntries(
   LOCATIONS.map((l) => [l.id, l]),
 );
+
+/** Rough relative distance between two markets, in "distance units" (not real miles) — used only for freight-cost estimation. */
+export function locationDistance(aId: string, bId: string): number {
+  if (aId === bId) return 0;
+  const a = LOCATIONS_BY_ID[aId];
+  const b = LOCATIONS_BY_ID[bId];
+  if (!a || !b) return 50;
+  return Math.sqrt((a.coordX - b.coordX) ** 2 + (a.coordY - b.coordY) ** 2);
+}

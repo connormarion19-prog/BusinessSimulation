@@ -104,6 +104,16 @@ export const PAPER_ROLES: EmployeeRoleTemplate[] = [
     description: "Owns supplier strategy — negotiates larger contracts and directs purchasing agents.",
     delegates: "Supplier strategy and negotiation oversight, beyond what a single purchasing agent handles alone.",
   },
+  {
+    id: "regional-operations-manager",
+    title: "Regional Operations Manager",
+    department: "management",
+    managesDepartment: "management",
+    tier: 3,
+    salaryRange: [95_000, 135_000],
+    description: "Oversees a group of plant/functional managers across facilities and markets instead of running one department directly — the layer that appears once the company outgrows a single person's span of control over its managers.",
+    delegates: "Direct oversight of your other managers, freeing you from personally coordinating every plant/sales/purchasing manager as the company spreads across facilities and regions.",
+  },
 ];
 
 export const PAPER_ROLES_BY_ID: Record<string, EmployeeRoleTemplate> = Object.fromEntries(
