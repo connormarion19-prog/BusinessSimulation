@@ -252,6 +252,33 @@ factory stock first and only fall back to costlier freight from the nearest
 facility when local stock runs out — so pre-positioning inventory via transfers is
 a genuine lever, not cosmetic.
 
+**Employee workload & capacity (Employees tab).** The staffing model no longer
+assumes one employee equals one job. Every employee — and the founder — has a real
+weekly-capacity allocation split across five functions (accounting, purchasing,
+sales, operations, administration), independent of their formal department. Four
+new startup-oriented generalist roles (Business Generalist, Operations Associate,
+Sales & Operations Associate, Finance & Administration Associate) spread that
+capacity moderately across several functions with a real, role-specific capability
+profile; existing specialists still concentrate ~100% in one. A real workload model
+(`engine/workload.ts`) derives required capacity per function from actual company
+state — headcount, suppliers, customers, facilities, production volume, open
+loans — never a flat "level up" trigger, and compares it against available (raw and
+skill-weighted "effective") capacity into a 5-tier staffing-gap readout (large
+surplus → critically overloaded) with a donut-chart capacity breakdown and a
+workload-vs-capacity bar chart, both driven by the exact same data the weekly
+simulation reads. A "Should You Hire?" panel gives a real, information-only
+capacity/cost preview per candidate role — never a recommendation. Overallocating
+an employee past 100% has real, visible consequences (lower output, more errors,
+faster fatigue) via a genuine penalty factor, not a soft cap. The weekly simulation
+itself now sums a primary specialist's contribution (unchanged formula — zero
+behavior change for existing single-specialist saves) plus a genuinely additive
+supplemental contribution from every other employee — chiefly generalists — with
+real allocated time in that function, so hiring one generalist visibly changes
+purchasing/sales/accounting/production capacity and outcomes, not just a stat
+screen. Promotion resets an employee's allocation to their new manager role's
+default split, and a generalist's own weekly evaluation narrates their actual time
+split from real data, not a scripted line.
+
 **Explicitly out of scope for this pass**: the other 14 industries, international
 expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, true
 per-region pricing (price is still set once per product company-wide, though its
@@ -263,7 +290,7 @@ tested core engine.
 
 ## Testing
 
-`npm test` runs 53 Vitest cases covering the systems most likely to break silently:
+`npm test` runs 74 Vitest cases covering the systems most likely to break silently:
 double-entry posting/rejection of unbalanced entries, trial-balance integrity,
 loan amortization to a zero balance, weekly evaluations generating from real
 hired-employee data, a JSON save/load round trip, a **260-week (5 calendar year)
@@ -294,5 +321,14 @@ source inventory immediately, respect destination storage capacity, and land at
 the destination only after real transit time; and a **110-week two-facility,
 two-region integration run** asserts the accounting identity *and* that every
 product's per-facility inventory (plus anything in transit) always reconciles
-with its pooled sellable total. An unbalanced ledger is treated as a bug, never a
-tolerated state, anywhere in this suite.
+with its pooled sellable total. **The employee workload/capacity redesign** adds
+21 more cases: company workload scales with real growth and stays deterministic;
+capacity correctly adds on hire and removes on fire; the 5-tier staffing-status
+classification; generalist vs. specialist affinity profiles genuinely differ;
+overallocation penalizes output/error-rate measurably; founder allocation maps
+onto the same 5-function model; hire-impact previews correctly spread (generalist)
+or concentrate (specialist) capacity; promotion resets allocation to the new
+role's default; and two integration tests proving that hiring a generalist and
+reallocating an employee's time both visibly change simulated output over
+15-30 weeks. An unbalanced ledger is treated as a bug, never a tolerated state,
+anywhere in this suite.
