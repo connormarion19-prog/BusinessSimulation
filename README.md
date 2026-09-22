@@ -279,18 +279,64 @@ screen. Promotion resets an employee's allocation to their new manager role's
 default split, and a generalist's own weekly evaluation narrates their actual time
 split from real data, not a scripted line.
 
+**Startup experience & financial drill-down (Phase 4).** A brand-new company now
+starts with zero customers and zero suppliers — no relationship is handed to the
+player, matching the design brief's "no predetermined customers or suppliers"
+requirement. Company creation (`NewGame.tsx`) is a sequential step-by-step wizard
+(name → difficulty → industry → location → financing/scale → segment → product →
+facility → summary), each step explaining what the choice means and its real
+consequence, rather than one long form.
+
+- **Prospecting (Customers tab).** New companies start with a pool of customer
+  prospects (`engine/prospecting.ts`) carrying a visible, deliberately imprecise
+  estimate (demand range, willingness-to-pay range) around real hidden ground
+  truth. Researching a prospect narrows the visible range without ever revealing
+  the exact truth. Pitching with real player-chosen terms (price, volume, payment
+  terms, contract length) computes a genuine close probability from how the offer
+  compares to the prospect's hidden price sensitivity, volume fit, terms, and
+  quality bar, plus the company's actual sales capability from the workload
+  engine — never a coin flip divorced from the offer made. Winning creates a real
+  customer account and posts a real outreach-cost journal entry; losing is
+  explained in plain language. The prospect pool refreshes weekly so it never
+  runs dry.
+- **First supplier (Suppliers tab).** With no supplier, production is genuinely
+  stuck at zero — surfaced as an urgent pending decision, not a silent gap. Picking
+  a first supplier correctly gives it 100% of purchasing allocation (a real bug
+  fixed this pass: previously only ever exercised as a company's second-or-later
+  supplier).
+- **Financial drill-down & explanation (Finance tab, `engine/financialExplain.ts`).**
+  Revenue and COGS are traceable by product directly from tagged journal entries
+  (`JournalEntry.productId`, reporting metadata only — never affects balancing),
+  not a parallel estimate. A "what changed last week" section attributes the
+  revenue/profit delta to real price/volume/cost effects. A "why are we losing
+  money" narrative compares actual unit production cost to actual selling price
+  whenever the company is unprofitable. A cash-vs-profit explanation grounds the
+  difference in real AR/AP/inventory swings, and a cash-runway warning breaks the
+  burn rate into its real payroll/supplier-payment/debt-service/collection
+  components. `InfoTip` (`components/ui.tsx`) plus `data/financialGlossary.ts` put
+  a plain-language definition on every major financial term throughout the app.
+- **Organizational pyramid (Management tab, `engine/orgChart.ts`).** A real tree
+  built from actual `Employee.managerId` reporting relationships, rooted at the
+  founder — not a decorative diagram. Functions that are overloaded with no
+  manager owning them (using the same staffing-gap data the Employee dashboard
+  reads) appear as explicit vacancy nodes, so an org gap is as visible as an
+  org chart.
+
 **Explicitly out of scope for this pass**: the other 14 industries, international
 expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, true
 per-region pricing (price is still set once per product company-wide, though its
 competitiveness is evaluated against each region's own price level), market
-research spend to reduce expansion uncertainty, and deeper competitor AI reacting
-to specific player moves (a new regional entry, a price change) rather than the
-market in aggregate. These are the natural next phases on top of a validated,
-tested core engine.
+research spend to reduce expansion uncertainty, deeper competitor AI reacting to
+specific player moves (a new regional entry, a price change) rather than the
+market in aggregate, supplier-side hidden-information/negotiation (supplier
+price/quality/reliability are shown plainly, unlike the customer side), an
+Easy-mode rebalance, a task-queue view of an individual employee's workload, and
+a "what if I changed the price" live preview on the product economics table.
+These are the natural next phases on top of a validated, tested core engine.
 
 ## Testing
 
-`npm test` runs 74 Vitest cases covering the systems most likely to break silently:
+`npm test` runs 88 Vitest cases covering the systems most likely to break silently:
 double-entry posting/rejection of unbalanced entries, trial-balance integrity,
 loan amortization to a zero balance, weekly evaluations generating from real
 hired-employee data, a JSON save/load round trip, a **260-week (5 calendar year)
@@ -330,5 +376,17 @@ onto the same 5-function model; hire-impact previews correctly spread (generalis
 or concentrate (specialist) capacity; promotion resets allocation to the new
 role's default; and two integration tests proving that hiring a generalist and
 reallocating an employee's time both visibly change simulated output over
-15-30 weeks. An unbalanced ledger is treated as a bug, never a tolerated state,
-anywhere in this suite.
+15-30 weeks. **The Phase 4 startup rewrite** adds `tests/startup.test.ts` (14
+cases): a brand-new company starts with zero customers and zero suppliers;
+production genuinely stays at zero with no supplier; a tiny ($15k) starting
+capital stays balanced; researching a prospect narrows its visible estimate
+without revealing the hidden truth; a well-matched pitch wins substantially
+more often than a lowball or overpriced one (a statistical test over 40 trials
+per scenario); a won pitch creates a real customer account; and a full 25-week
+build-from-scratch run (zero suppliers/customers → first supplier → first won
+customer → running business) stays balanced throughout. Existing tests that
+implicitly relied on a free starting supplier now go through a small wrapper
+(`tests/testHelpers.ts` `createTestGame`) that adds one explicitly, so the
+~50 pre-existing `createNewGame` call sites needed no individual rewrite. An
+unbalanced ledger is treated as a bug, never a tolerated state, anywhere in
+this suite.
