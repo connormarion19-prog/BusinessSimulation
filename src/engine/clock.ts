@@ -336,6 +336,41 @@ export function advanceWeek(state: GameState): GameState {
       severity: finalIncomeStatement.netIncome < -500 ? "urgent" : "warning",
     });
   }
+  const overdueInvoices = state.company.invoices.filter((i) => i.status === "overdue");
+  if (overdueInvoices.length > 0) {
+    const totalOverdue = overdueInvoices.reduce((s, i) => s + (i.amount - i.amountPaid), 0);
+    decisions.push({
+      id: "dec-invoices-overdue",
+      kind: "invoice-overdue",
+      week: newWeek,
+      title: `${overdueInvoices.length} customer invoice(s) overdue`,
+      detail: `$${Math.round(totalOverdue).toLocaleString()} past due across ${overdueInvoices.length} invoice(s) — see Customers for who owes what.`,
+      severity: totalOverdue > cash ? "urgent" : "warning",
+    });
+  }
+  const overdueBills = state.company.bills.filter((b) => b.status === "overdue");
+  if (overdueBills.length > 0) {
+    const totalOverdue = overdueBills.reduce((s, b) => s + (b.amount - b.amountPaid), 0);
+    decisions.push({
+      id: "dec-bills-overdue",
+      kind: "bill-overdue",
+      week: newWeek,
+      title: `${overdueBills.length} supplier bill(s) overdue`,
+      detail: `$${Math.round(totalOverdue).toLocaleString()} past due to suppliers — see Suppliers for details.`,
+      severity: "warning",
+    });
+  }
+  const negotiatingProspects = state.company.prospects.filter((p) => p.status === "negotiation");
+  if (negotiatingProspects.length > 0) {
+    decisions.push({
+      id: "dec-prospects-negotiating",
+      kind: "prospect-negotiating",
+      week: newWeek,
+      title: `${negotiatingProspects.length} prospect(s) awaiting a response`,
+      detail: `${negotiatingProspects.map((p) => p.name).join(", ")} — they've indicated what it would take to close. Revisit them on the Customers tab.`,
+      severity: "opportunity",
+    });
+  }
   state.pendingDecisions = decisions;
 
   // Briefing
