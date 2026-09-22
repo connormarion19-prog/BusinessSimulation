@@ -15,6 +15,7 @@ import { computeManagerSpanCapacity, computeSpanOverloadFactor, directReportsOf 
 import { estimateNearbyCompetitorCapacity } from "../../engine/geography";
 import { freightCostPerUnit, nearestFacility } from "../../engine/logistics";
 import { LOCATIONS_BY_ID } from "../../data/locations";
+import { recordSalesOrderAndInvoice, recordPurchaseOrderAndBill, reconcileInvoicePayments, reconcileBillPayments, flagOverdueRecords, trimOrderLedgers } from "../../engine/orderLedger";
 
 const FOUNDER_BASE_UNITS_PER_WEEK = 95;
 const FOUNDER_BASE_SKILL = 62;
@@ -208,6 +209,15 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
         }),
       );
       supplierDeliveries.push({ supplier, delivered: deliveredQty, cost });
+      recordPurchaseOrderAndBill(company, {
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        quantity: deliveredQty,
+        unitPrice,
+        week,
+        date,
+        paymentTermsDays: supplier.paymentTermsDays,
+      });
     }
   }
   if (supplierDeliveries.length > 0) {
@@ -450,6 +460,8 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     locationId: string;
     orders: number;
     customers: CustomerAccount[];
+    /** Each contracted customer's own share of this channel's weekly demand, before fulfillment rationing — used to create real, per-customer invoices. */
+    customerOrders: Map<string, number>;
     freightPerUnit: number;
     commissionPct: number;
     entry?: MarketEntry;
@@ -471,16 +483,18 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
     const customersForProduct = company.customers.filter((c) => c.productId === product.id);
     const homeCustomers = customersForProduct.filter((c) => !c.locationId || c.locationId === homeLocationId);
     let homeContractedOrders = 0;
+    const homeCustomerOrders = new Map<string, number>();
     for (const customer of homeCustomers) {
       const priceAcceptance = clamp(1 - customer.priceSensitivity * (relativePrice - 1), 0.2, 1.3);
       const weeklyDemand = (customer.annualVolumeUnits / 52) * priceAcceptance * (customer.relationshipStrength / 100);
       homeContractedOrders += weeklyDemand;
+      homeCustomerOrders.set(customer.id, weeklyDemand);
     }
 
     // Channel 1 is always the home market (unchanged formula/economics from the single-region era).
     // Additional channels are any other regions the company has actively entered for this product.
     const channels: SalesChannel[] = [
-      { locationId: homeLocationId, orders: round2(homeSpotOrders + homeContractedOrders), customers: homeCustomers, freightPerUnit: 0, commissionPct: 0 },
+      { locationId: homeLocationId, orders: round2(homeSpotOrders + homeContractedOrders), customers: homeCustomers, customerOrders: homeCustomerOrders, freightPerUnit: 0, commissionPct: 0 },
     ];
 
     const activeEntries = company.enteredMarkets.filter(
@@ -499,10 +513,12 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
 
       const regionCustomers = customersForProduct.filter((c) => c.locationId === entry.locationId);
       let regionContractedOrders = 0;
+      const regionCustomerOrders = new Map<string, number>();
       for (const customer of regionCustomers) {
         const priceAcceptance = clamp(1 - customer.priceSensitivity * (regionRelativePrice - 1), 0.2, 1.3);
         const weeklyDemand = (customer.annualVolumeUnits / 52) * priceAcceptance * (customer.relationshipStrength / 100);
         regionContractedOrders += weeklyDemand;
+        regionCustomerOrders.set(customer.id, weeklyDemand);
       }
 
       let freightPerUnit = 0;
@@ -524,6 +540,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
         locationId: entry.locationId,
         orders: round2(regionSpotOrders + regionContractedOrders),
         customers: regionCustomers,
+        customerOrders: regionCustomerOrders,
         freightPerUnit,
         commissionPct,
         entry,
@@ -554,7 +571,24 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
           customer.relationshipStrength = clamp(customer.relationshipStrength - 6, 0, 100);
           if (customer.relationshipStrength < 35) customer.atRisk = true;
         }
-        if (unitsSold > 0) customer.lastOrderWeek = week;
+        if (fulfillRatio > 0.95) customer.ordersFulfilled += 1;
+        else if ((channel.customerOrders.get(customer.id) ?? 0) > 0.5) customer.ordersMissed += 1;
+
+        const customerWeeklyDemand = channel.customerOrders.get(customer.id) ?? 0;
+        const customerFulfilledQty = round2(customerWeeklyDemand * fulfillRatio);
+        if (customerFulfilledQty > 0.5) {
+          recordSalesOrderAndInvoice(company, {
+            customerId: customer.id,
+            customerName: customer.name,
+            productId: product.id,
+            quantity: customerFulfilledQty,
+            unitPrice: product.priceWeekly,
+            week,
+            date,
+            paymentTermsDays: customer.paymentTermsDays,
+          });
+          customer.lastOrderWeek = week;
+        }
       }
 
       if (unitsSold > 0) {
@@ -680,6 +714,7 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   if (collected > 0.5) {
     entries.push(makeEntry({ week, date, memo: "Customer payments collected", source: "ar-collection", lines: [dr("cash", collected), cr("ar", collected)], cashFlowCategory: "operating" }));
   }
+  reconcileInvoicePayments(company, week, collected);
 
   const apBalance = accountBalance(company.entries, "ap", week - 1) + entries.filter((e) => e.source === "purchasing").reduce((s, e) => s + (e.lines.find((l) => l.accountId === "ap")?.credit ?? 0), 0);
   const avgSupplierTermsWeeks = company.suppliers.length
@@ -690,6 +725,9 @@ export function simulatePaperManufacturingWeek(ctx: IndustrySimContext): Industr
   if (apPaid > 0.5) {
     entries.push(makeEntry({ week, date, memo: "Supplier bills paid", source: "ap-payment", lines: [dr("ap", apPaid), cr("cash", apPaid)], cashFlowCategory: "operating" }));
   }
+  reconcileBillPayments(company, week, apPaid);
+  flagOverdueRecords(company, week);
+  trimOrderLedgers(company);
 
   // ---- 6. Weekly evaluations ----
   for (const emp of activeEmployees) {

@@ -45,6 +45,12 @@ export function migrateGameState(raw: unknown): GameState {
   for (const customer of company.customers as Record<string, unknown>[]) {
     if (typeof customer.productId !== "string") customer.productId = products[0]?.id ?? "";
     if (typeof customer.locationId !== "string") customer.locationId = (company.locationId as string) ?? "";
+    if (typeof customer.contractLengthWeeks !== "number") customer.contractLengthWeeks = 52;
+    if (typeof customer.contractEndWeek !== "number") customer.contractEndWeek = ((customer.contractedSince as number) ?? 0) + 52;
+    if (typeof customer.paymentReliability !== "number") customer.paymentReliability = 75;
+    if (typeof customer.ordersFulfilled !== "number") customer.ordersFulfilled = 0;
+    if (typeof customer.ordersMissed !== "number") customer.ordersMissed = 0;
+    if (typeof customer.complaints !== "number") customer.complaints = 0;
   }
 
   if (!Array.isArray(company.suppliers)) company.suppliers = [];
@@ -53,6 +59,11 @@ export function migrateGameState(raw: unknown): GameState {
   if (suppliersMissingAllocation.length > 0 && suppliers.length > 0) {
     const evenShare = 1 / suppliers.length;
     for (const supplier of suppliers) supplier.purchaseAllocationPct = evenShare;
+  }
+  for (const supplier of suppliers) {
+    if (typeof supplier.minimumOrderUnits !== "number") supplier.minimumOrderUnits = 15;
+    if (typeof supplier.negotiationRounds !== "number") supplier.negotiationRounds = 0;
+    if (supplier.lastNegotiationWeek === undefined) supplier.lastNegotiationWeek = null;
   }
 
   if (!Array.isArray(company.employees)) company.employees = [];
@@ -79,6 +90,16 @@ export function migrateGameState(raw: unknown): GameState {
   if (!Array.isArray(company.enteredMarkets)) company.enteredMarkets = [];
   if (!Array.isArray(company.inTransitShipments)) company.inTransitShipments = [];
   if (!Array.isArray(company.prospects)) company.prospects = [];
+  for (const prospect of company.prospects as Record<string, unknown>[]) {
+    if (typeof prospect.hasCurrentSupplier !== "boolean") prospect.hasCurrentSupplier = false;
+    if (typeof prospect.buyingFrequencyWeeks !== "number") prospect.buyingFrequencyWeeks = 8;
+    if (!Array.isArray(prospect.outreachHistory)) prospect.outreachHistory = [];
+  }
+  if (!Array.isArray(company.salesOrders)) company.salesOrders = [];
+  if (!Array.isArray(company.invoices)) company.invoices = [];
+  if (!Array.isArray(company.purchaseOrders)) company.purchaseOrders = [];
+  if (!Array.isArray(company.bills)) company.bills = [];
+  if (typeof company.reputation !== "number") company.reputation = 50;
 
   const market = state.market as unknown as Record<string, unknown>;
   if (market && (!market.regions || typeof market.regions !== "object")) {
