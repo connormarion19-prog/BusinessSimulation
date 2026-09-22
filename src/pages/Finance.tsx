@@ -2,9 +2,56 @@ import { useState } from "react";
 import { useGameStore } from "../store/useGameStore";
 import { incomeStatementForRange, balanceSheetAsOf, cashFlowForRange, financialRatios } from "../engine/reports";
 import { explainProductEconomics, explainCogsComponents, explainCashVsProfit, explainLoss, computeCashRunwayWarning } from "../engine/financialExplain";
+import { computeInventoryCoverage, computePriceScenario, computeBreakEven, computeCashFlowForecast } from "../engine/decisionSupport";
 import { ACCOUNTS_BY_ID } from "../data/chartOfAccounts";
 import { formatMoney, formatMoneyPrecise } from "../engine/dateUtils";
-import { Card, CardHeading, Table, Td, Badge, InfoTip } from "../components/ui";
+import { Card, CardHeading, Table, Td, Th, Badge, InfoTip } from "../components/ui";
+
+function PriceScenarioTool() {
+  const game = useGameStore((s) => s.game)!;
+  const [productId, setProductId] = useState(game.company.products[0]?.id ?? "");
+  const product = game.company.products.find((p) => p.id === productId) ?? game.company.products[0];
+  const [candidatePrice, setCandidatePrice] = useState(product?.priceWeekly ?? 0);
+  if (!product) return null;
+
+  const scenario = computePriceScenario(game.company, product, candidatePrice, game.market, game.competitors, 1.0, 1 / Math.max(1, game.company.products.filter((p) => p.active).length));
+  const current = computePriceScenario(game.company, product, product.priceWeekly, game.market, game.competitors, 1.0, 1 / Math.max(1, game.company.products.filter((p) => p.active).length));
+
+  return (
+    <Card>
+      <CardHeading subtitle="Experiment with a price before applying it. Ranges reflect real uncertainty — this never tells you which price to pick.">
+        Price Testing
+      </CardHeading>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs">
+          Product
+          <select value={product.id} onChange={(e) => { setProductId(e.target.value); const p = game.company.products.find((x) => x.id === e.target.value); if (p) setCandidatePrice(p.priceWeekly); }} className="mt-1 block rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-xs">
+            {game.company.products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <label className="text-xs">
+          Candidate price
+          <input type="number" step="0.01" value={candidatePrice} onChange={(e) => setCandidatePrice(Number(e.target.value))} className="mt-1 block w-28 rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-xs" />
+        </label>
+        <span className="text-xs text-ink-500">Current price: ${product.priceWeekly.toFixed(2)}</span>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-md border border-ink-700 p-2.5 text-xs">
+          <div className="mb-1 font-medium text-ink-400">Current — ${product.priceWeekly.toFixed(2)}</div>
+          <div>Est. volume: {Math.round(current.estVolumeLow).toLocaleString()}–{Math.round(current.estVolumeHigh).toLocaleString()}/wk</div>
+          <div>Est. revenue: {formatMoney(current.estRevenueLow)}–{formatMoney(current.estRevenueHigh)}/wk</div>
+          <div>Est. gross profit: {formatMoney(current.estGrossProfitLow)}–{formatMoney(current.estGrossProfitHigh)}/wk</div>
+        </div>
+        <div className="rounded-md border border-emerald-700/50 bg-emerald-950/10 p-2.5 text-xs">
+          <div className="mb-1 font-medium text-emerald-300">Scenario — ${candidatePrice.toFixed(2)}</div>
+          <div>Est. volume: {Math.round(scenario.estVolumeLow).toLocaleString()}–{Math.round(scenario.estVolumeHigh).toLocaleString()}/wk</div>
+          <div>Est. revenue: {formatMoney(scenario.estRevenueLow)}–{formatMoney(scenario.estRevenueHigh)}/wk</div>
+          <div>Est. gross profit: {formatMoney(scenario.estGrossProfitLow)}–{formatMoney(scenario.estGrossProfitHigh)}/wk</div>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 export default function Finance() {
   const game = useGameStore((s) => s.game)!;
@@ -23,6 +70,9 @@ export default function Finance() {
   const cashVsProfit = explainCashVsProfit(game.company, startWeek, game.week);
   const loss = explainLoss(game.company, game.week);
   const runway = computeCashRunwayWarning(game.company, game.week);
+  const inventory = computeInventoryCoverage(game.company, game.week);
+  const breakEvens = game.company.products.filter((p) => p.active).map((p) => computeBreakEven(game.company, p, game.week));
+  const forecast = computeCashFlowForecast(game.company, game.week, 8);
 
   return (
     <div className="flex flex-col gap-6">
@@ -218,6 +268,89 @@ export default function Finance() {
           </Table>
         </Card>
       )}
+
+      <PriceScenarioTool />
+
+      <Card>
+        <CardHeading subtitle="How many weeks of runway raw materials and each finished-goods line actually have at current usage — not just a raw unit count.">
+          Inventory Coverage
+        </CardHeading>
+        <Table>
+          <thead><tr><Th>Item</Th><Th align="right">On Hand</Th><Th align="right">Weekly Usage</Th><Th align="right">Weeks Coverage</Th><Th align="right">Value</Th></tr></thead>
+          <tbody>
+            <tr>
+              <Td>{inventory.rawMaterials.label}</Td>
+              <Td align="right">{Math.round(inventory.rawMaterials.unitsOnHand).toLocaleString()}</Td>
+              <Td align="right">{Math.round(inventory.rawMaterials.avgWeeklyUsage).toLocaleString()}</Td>
+              <Td align="right">{inventory.rawMaterials.weeksCoverage !== null ? `${inventory.rawMaterials.weeksCoverage.toFixed(1)}wk` : "—"}</Td>
+              <Td align="right">{formatMoney(inventory.rawMaterials.totalValue)}</Td>
+            </tr>
+            {inventory.finishedGoods.map((line) => (
+              <tr key={line.label}>
+                <Td>{line.label}</Td>
+                <Td align="right">{Math.round(line.unitsOnHand).toLocaleString()}</Td>
+                <Td align="right">{Math.round(line.avgWeeklyUsage).toLocaleString()}</Td>
+                <Td align="right">
+                  {line.weeksCoverage !== null ? (
+                    <span className={line.weeksCoverage < 1 ? "text-rose-400" : line.weeksCoverage > 6 ? "text-amber-400" : undefined}>{line.weeksCoverage.toFixed(1)}wk</span>
+                  ) : "—"}
+                </Td>
+                <Td align="right">{formatMoney(line.totalValue)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+        <p className="mt-2 text-[11px] text-ink-500">Too little coverage risks stockouts and missed commitments; too much ties up cash in storage. Both extremes are flagged above.</p>
+      </Card>
+
+      {breakEvens.length > 0 && (
+        <Card>
+          <CardHeading subtitle="Only raw materials (and per-unit freight/commission) count as variable here — direct labor and overhead are salaried/leased in this game, not paid per unit, so they're treated as fixed rather than folded silently into 'variable cost.'">
+            Break-Even &amp; Contribution Margin
+          </CardHeading>
+          <div className="flex flex-col gap-3">
+            {breakEvens.map((be) => (
+              <div key={be.productId} className="rounded-md border border-ink-700 p-2.5 text-xs">
+                <div className="mb-1 flex justify-between font-medium text-ink-200">
+                  <span>{be.productName}</span>
+                  <span>Contribution margin: {be.contributionMarginPct !== null ? `${be.contributionMarginPct.toFixed(1)}%` : "—"} (${be.contributionMarginPerUnit.toFixed(2)}/unit)</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 text-ink-400 sm:grid-cols-4">
+                  <div>Price: <span className="text-ink-100">${be.pricePerUnit.toFixed(2)}</span></div>
+                  <div>Variable cost/unit: <span className="text-ink-100">${be.variableCostPerUnit.toFixed(2)}</span></div>
+                  <div>Fixed costs (share): <span className="text-ink-100">{formatMoney(be.fixedCostsWeekly)}/wk</span></div>
+                  <div>Break-even: <span className="text-ink-100">{be.breakEvenUnitsWeekly !== null ? `${Math.ceil(be.breakEvenUnitsWeekly).toLocaleString()}/wk` : "—"}</span></div>
+                </div>
+                <p className="mt-1.5 text-ink-300">{be.narrative}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeading subtitle="Projected 8 weeks ahead from current collections, supplier payments, payroll, and debt service — the range widens the further out it reaches, since uncertainty compounds.">
+          Cash Flow Forecast
+        </CardHeading>
+        <p className="mb-2 text-sm text-ink-200">{forecast.narrative}</p>
+        <Table>
+          <thead><tr><Th align="right">Week</Th><Th align="right">Collections</Th><Th align="right">Supplier Pmts</Th><Th align="right">Payroll</Th><Th align="right">Debt Service</Th><Th align="right">Projected Cash</Th></tr></thead>
+          <tbody>
+            {forecast.weeks.map((w) => (
+              <tr key={w.week}>
+                <Td align="right">wk {w.week}</Td>
+                <Td align="right">{formatMoney(w.projectedCollections)}</Td>
+                <Td align="right">({formatMoney(w.projectedSupplierPayments)})</Td>
+                <Td align="right">({formatMoney(w.projectedPayroll)})</Td>
+                <Td align="right">({formatMoney(w.projectedDebtService)})</Td>
+                <Td align="right" className={w.projectedCashMid < 0 ? "text-rose-400" : undefined}>
+                  {formatMoney(w.projectedCashLow)}–{formatMoney(w.projectedCashHigh)}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
 
       {runway.weeksOfRunway !== null && (
         <Card className={runway.weeksOfRunway < 8 ? "border-rose-800/60 bg-rose-950/20" : undefined}>
