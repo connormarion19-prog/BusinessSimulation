@@ -4,7 +4,7 @@ import type { IndustryDefinition, MarketState, RegionalMarketState } from "../ty
 import type { JournalEntry } from "../types/finance";
 import type { RngState } from "./rng";
 import { makeEntry, dr, cr, round2 } from "./ledger";
-import { seedRegionalMarket } from "./geography";
+import { seedRegionalMarket, estimateCompetitivePressure } from "./geography";
 import { openFacilityForCompany, type FacilityFinancing } from "./facilities";
 import type { FacilityOwnershipType } from "../types/core";
 import { LOCATIONS_BY_ID } from "../data/locations";
@@ -80,6 +80,43 @@ export function estimateExpansionForecast(
     estimatedBreakEvenYearsHigh: Math.max(0.5, breakEvenHigh),
     risks,
   };
+}
+
+/** Deterministic, non-mutating estimate of a region's demand/price — used for the UI's expansion-screen preview so simply browsing options never touches the game's RNG or seeds real market state early. */
+export function previewRegionalMarket(
+  market: MarketState,
+  competitors: CompetitorCompany[],
+  locationId: string,
+): RegionalMarketState {
+  const existing = market.regions[locationId];
+  if (existing) return existing;
+  const location = LOCATIONS_BY_ID[locationId];
+  const multiplier = location?.regionalDemandMultiplier ?? 1;
+  const weeklyDemandUnits = round2(market.regionalWeeklyDemandUnits * multiplier);
+  return {
+    locationId,
+    weeklyDemandUnits,
+    estimatedDemandRangeUnits: [round2(weeklyDemandUnits * 0.85), round2(weeklyDemandUnits * 1.15)],
+    avgMarketPrice: market.avgMarketPrice,
+    competitivePressure: estimateCompetitivePressure(competitors, locationId, weeklyDemandUnits),
+  };
+}
+
+/** Non-mutating estimate of the up-front capital a given entry mode would need — mirrors enterMarket's own sizing without actually opening anything. */
+export function previewEntryInvestment(
+  industry: IndustryDefinition,
+  mode: MarketEntryMode,
+  locationId: string,
+  ownershipType: FacilityOwnershipType = "lease",
+): number {
+  const location = LOCATIONS_BY_ID[locationId];
+  const rentIndex = location?.commercialRentIndex ?? 1;
+  if (mode === "remote") return REMOTE_SETUP_COST;
+  if (mode === "distributor") return DISTRIBUTOR_SETUP_COST;
+  const template = industry.facilityTemplates.find((t) => t.role === (mode === "warehouse" ? "distribution" : "production"));
+  if (!template) return 0;
+  const purchaseValue = round2(template.purchaseValue * rentIndex);
+  return ownershipType === "lease" ? round2(template.weeklyLeaseCost * rentIndex * 4) : purchaseValue;
 }
 
 export interface EnterMarketParams {

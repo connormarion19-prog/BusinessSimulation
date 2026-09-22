@@ -213,19 +213,57 @@ defaults on load — `engine/migrate.ts` — rather than crashing or silently lo
 data; old companies pick up right where they left off with every new system
 available to them.
 
+**Regional management.** A new tier-3 role, Regional Operations Manager, oversees
+other managers rather than an operational department directly — it reuses the
+existing generic delegation/span-of-control hierarchy (`managesDepartment:
+"management"`) rather than any bespoke code, matching the design goal that growth
+should stress the same organizational systems harder, not require new ones.
+
+**Facility ownership & financing (Facilities tab).** Every facility, new or
+existing, is leased, purchased, or built from scratch, and each option is real: a
+lease posts a security deposit; a purchase (cash or a real amortizing bank loan)
+books Property/Plant & Equipment funded by cash or a new Notes Payable; a
+construction project books Construction-in-Progress, takes real weeks to complete,
+and contributes zero capacity, staffing, or cost until it's actually placed in
+service, at which point it converts to PP&E automatically. Nothing here is a fake
+balance-sheet adjustment — every path is a real, balanced set of journal entries.
+
+**Geographic markets & market entry (Market tab).** Every location in the game now
+has its own regional demand pool, price level, and competitive pressure — derived
+from real, distance-weighted competitor presence (competitors have real home
+locations now, not a placeholder) — rather than one shared national pool. A company
+can enter a new region four different ways (remote sales, a distributor, a local
+warehouse, or a full local facility), each with its own real setup cost and ramp-up
+time. Before committing, the player sees a feasibility report — estimated market
+size, expected first-year revenue, operating margin, required investment, and
+break-even time, all as ranges with real named risks — generated live from the
+actual regional-market model, never a canned number. Once active, every entry
+tracks real actual-vs-forecast revenue over time so an expansion's performance is
+genuinely visible, not just assumed. Regional demand and home demand are rationed
+proportionally against available inventory each week, so a home market that alone
+exceeds production capacity can't structurally starve every region to zero.
+
+**Internal logistics & multi-location inventory (Facilities tab).** Finished-goods
+inventory is now tracked per facility, not just as one company-wide number. Moving
+inventory between facilities is a real action with real freight cost (distance-
+based) booked immediately and real transit time before it lands, bounded by the
+destination's actual storage capacity. Regional sales draw down local warehouse/
+factory stock first and only fall back to costlier freight from the nearest
+facility when local stock runs out — so pre-positioning inventory via transfers is
+a genuine lever, not cosmetic.
+
 **Explicitly out of scope for this pass**: the other 14 industries, international
-expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, multi-location
-inventory (raw materials and finished goods remain a shared company-wide pool rather
-than tracked per facility, so there's no internal-transfer system yet), true
-per-region domestic markets (facility costs already scale by location, but demand
-and competitor presence are still one national pool rather than segmented by
-state/region), and deeper competitor AI (they react to the market, not yet to
-specific player moves like a new facility or product launch). These are the natural
-next phases on top of a validated, tested core engine.
+expansion (currency, tariffs, foreign subsidiaries), acquisitions/M&A, true
+per-region pricing (price is still set once per product company-wide, though its
+competitiveness is evaluated against each region's own price level), market
+research spend to reduce expansion uncertainty, and deeper competitor AI reacting
+to specific player moves (a new regional entry, a price change) rather than the
+market in aggregate. These are the natural next phases on top of a validated,
+tested core engine.
 
 ## Testing
 
-`npm test` runs 42 Vitest cases covering the systems most likely to break silently:
+`npm test` runs 53 Vitest cases covering the systems most likely to break silently:
 double-entry posting/rejection of unbalanced entries, trial-balance integrity,
 loan amortization to a zero balance, weekly evaluations generating from real
 hired-employee data, a JSON save/load round trip, a **260-week (5 calendar year)
@@ -244,6 +282,17 @@ a reallocation or hire beyond the authorized threshold is proposed, not applied,
 until the player approves or rejects it; a rejected hire leaves the opening
 genuinely open; both domains together stay balanced for 26 weeks), and **save
 migration** (a fixture shaped like the very first release — no delegation, no
-per-facility employees, no multi-product fields — is backfilled correctly and can
-keep simulating with a balanced ledger). An unbalanced ledger is treated as a bug,
-never a tolerated state, anywhere in this suite.
+per-facility employees, no multi-product fields, no Phase 3 geography/logistics
+fields at all — is backfilled correctly and can keep simulating with a balanced
+ledger). **Phase 3 expansion** adds its own suite: facility purchase/loan/
+construction financing books the right accounts and a construction project
+contributes no capacity until it converts to PP&E on schedule; a remote market
+entry ramps up on time and accrues real, attributed regional revenue; a warehouse
+entry opens a real zero-capacity distribution facility; double-entering the same
+market is refused and exiting stops further ramp-up; internal transfers deduct
+source inventory immediately, respect destination storage capacity, and land at
+the destination only after real transit time; and a **110-week two-facility,
+two-region integration run** asserts the accounting identity *and* that every
+product's per-facility inventory (plus anything in transit) always reconciles
+with its pooled sellable total. An unbalanced ledger is treated as a bug, never a
+tolerated state, anywhere in this suite.
