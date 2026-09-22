@@ -9,6 +9,7 @@ import { generateApplicantPool, answerInterviewQuestion as answerInterviewQuesti
 import { makeEntry, dr, cr } from "../engine/ledger";
 import { addProductToCompany, discontinueProductOnCompany } from "../engine/products";
 import { addSupplierToCompany, removeSupplierFromCompany } from "../engine/suppliers";
+import { negotiateSupplierTerms as negotiateSupplierTermsEngine } from "../engine/supplierNegotiation";
 import { openFacilityForCompany, type FacilityFinancing } from "../engine/facilities";
 import { promoteEmployeeToManager } from "../engine/management";
 import { approveManagerDecision as approveManagerDecisionEngine, rejectManagerDecision as rejectManagerDecisionEngine } from "../engine/delegation";
@@ -22,7 +23,7 @@ import {
   acceptProspectCounterOffer as acceptProspectCounterOfferEngine,
 } from "../engine/prospecting";
 import { computeStaffingGaps } from "../engine/workload";
-import type { CustomerCounterOffer, CustomerPitch, OutreachMethod } from "../types/core";
+import type { CustomerCounterOffer, CustomerPitch, OutreachMethod, SupplierCounterOffer, SupplierNegotiationOffer } from "../types/core";
 import { listSaves, loadGame as loadGameFromDisk, saveGame as persistGame, deleteGame as deleteGameFromDisk, type SaveIndexEntry } from "./saveSlots";
 
 function clone<T>(value: T): T {
@@ -46,6 +47,7 @@ interface GameStoreState {
   addSupplier: (supplierTemplateId: string) => void;
   setSupplierAllocation: (supplierId: string, pct: number) => void;
   removeSupplier: (supplierId: string) => void;
+  negotiateSupplierTerms: (supplierId: string, offer: SupplierNegotiationOffer) => { ok: boolean; accepted?: boolean; reason?: string; counterOffer?: SupplierCounterOffer };
   setFounderAllocation: (allocation: FounderAllocation) => void;
   setEmployeeAllocation: (employeeId: string, allocation: Record<WorkFunction, number>) => void;
   postJobOpening: (roleId: string, salaryMin: number, salaryMax: number) => void;
@@ -171,6 +173,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const next = clone(game);
     if (!removeSupplierFromCompany(next.company, supplierId, next.week, next.currentDate)) return;
     set({ game: next });
+  },
+
+  negotiateSupplierTerms: (supplierId, offer) => {
+    const { game } = get();
+    if (!game) return { ok: false, reason: "No active game." };
+    const next = clone(game);
+    const purchasingSkillFactor = purchasingSkillFactorFor(next);
+    const result = negotiateSupplierTermsEngine(next.company, supplierId, offer, purchasingSkillFactor, next.week, next.currentDate);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    set({ game: next });
+    return { ok: true, accepted: result.accepted, reason: result.reason, counterOffer: result.counterOffer };
   },
 
   setFounderAllocation: (allocation) => {
@@ -507,4 +520,11 @@ function productQualityFactorFor(game: GameState): number {
     (e) => e.status === "active" && (e.roleId === "quality-inspector" || e.roleId === "plant-manager"),
   );
   return hasQualityInvestment ? 1.0 : 0.82;
+}
+
+function purchasingSkillFactorFor(game: GameState): number {
+  const industry = getIndustryDefinition(game.company.industryId);
+  if (!industry) return 0.7;
+  const purchasingGap = computeStaffingGaps(game.company, industry.employeeRoles).purchasing;
+  return Math.max(0.4, Math.min(1.6, purchasingGap.efficiency));
 }
